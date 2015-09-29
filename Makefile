@@ -23,3 +23,11 @@ purge:
 	@rm -f $(OBJECTS)
 	@rm -f robolock
 	@rm -f robolock-debug
+install:
+	@echo installing to /usr/bin
+	@cp robolock /usr/bin/robolock
+	@chmod 755 /usr/bin/robolock
+	@chmod u+s /usr/bin/robolock
+uninstall:
+	@echo uninstalling
+	@rm -f /usr/bin/robolock
