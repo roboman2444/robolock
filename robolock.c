@@ -38,7 +38,8 @@ typedef struct lock_s {
 } lock_t;
 
 typedef struct lock_opt {
-	int blur_size;
+	unsigned int blur_size;
+    unsigned int threads;
 } lock_opt;
 
 int running = TRUE;
@@ -102,10 +103,9 @@ char * getpw(void){
 void readpw(Display *disp, const char *pws){
 	char buf[32], passwd[256];
 	int num, screen;
-	unsigned int len, color;
+	unsigned int len;
 	KeySym ksym;
 	XEvent ev;
-//	static int oldc = INIT;
 	len = 0;
 	running = TRUE;
 
@@ -122,11 +122,9 @@ void readpw(Display *disp, const char *pws){
 			switch(ksym){
 			case XK_Return:
 				passwd[len] = 0;
-//				printf("pws %s\npasswd %s\n", pws, passwd);
 
 				running = !!strcmp(crypt(passwd, pws), pws);
 				if(running){
-					//HERE
 					XBell(disp, 100);
 					failure = TRUE;
 				}
@@ -156,7 +154,6 @@ void readpw(Display *disp, const char *pws){
 int unlockscreen(Display * disp, lock_t * lock){
 	if(!disp || !lock) return FALSE;
 	XUngrabPointer(disp, CurrentTime);
-	//XFreeColors(disp, DefaultColormap(disp, lock->screen), lock->colors, NUMCOLS, 0);
 	if(lock->pmap)XFreePixmap(disp, lock->pmap);
 	if(lock->screenshot)XDestroyImage(lock->screenshot);
 	XDestroyWindow(disp, lock->win);
@@ -302,9 +299,9 @@ void postprocessy(ppargs_t * args){
 }
 
 
-int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsigned int numthreads){
+int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
 
-	if(numthreads < 1) return FALSE;
+	if(cmd->threads < 1) return FALSE;
 
 	unsigned int width = lock->width;
 	unsigned int height = lock->height;
@@ -317,26 +314,26 @@ int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsign
 
 	memcpy(data, input, width * height * depth);
 
-	ppargs_t * mythreads = malloc(numthreads * sizeof(ppargs_t));
+	ppargs_t * mythreads = malloc(cmd->threads * sizeof(ppargs_t));
 	int i;
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		mythreads[i].d1 = data;
 		mythreads[i].d2 = input;
-		mythreads[i].blursize = blursize;
-		mythreads[i].numthreads = numthreads;
+		mythreads[i].blursize = cmd->blur_size;
+		mythreads[i].numthreads = cmd->threads;
 		mythreads[i].mythread = i;
 		mythreads[i].width = width;
 		mythreads[i].height = height;
 		mythreads[i].depth = depth;
 		pthread_create(&mythreads[i].t, NULL, (void * )postprocessx, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_create(&mythreads[i].t, NULL, (void *) postprocessy, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
 
@@ -346,25 +343,20 @@ int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsign
 	return TRUE;
 }
 
-int lockscreen(Display * disp, lock_t *lock){
+int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
 	if(!disp || !lock) return FALSE;
 	GC gc;
 	Cursor invisible;
 	char curs[] = {0,0,0,0,0,0,0,0};
 	XColor color = {0};
-//	size_t len;
-//	int i;
 	XSetWindowAttributes wa;
-//	for(i = 0; i < NUMCOLS; i++){
-//		XAllocNamedCOlor(disp, DefaultColormap(disp, lock->screen), colorname[i], &color, &dummy);
-//	}
 	lock->root = RootWindow(disp, lock->screen);
 
 	lock->width = DisplayWidth(disp, lock->screen);
 	lock->height = DisplayHeight(disp, lock->screen);
 
 	gc = XCreateGC(disp, lock->root, 0, 0);
-	getscreenshot(disp, lock, 25, 8);
+	getscreenshot(disp, lock, cmd);
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
 	XPutImage(disp, lock->pmap, gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 
@@ -414,11 +406,17 @@ int main(const int argc, char ** argv){
 	{
 		/* default blur size */
 		cmd_opts.blur_size = 25;
+
+        /* default thread count */
+        cmd_opts.threads = 8;
 	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:")) != -1) {
+	while((c = getopt(argc, argv, "b:t:")) != -1) {
 		switch(c) {
+			case 't':
+				cmd_opts.threads = atoi(optarg);
+				break;
 			case 'b':
 				cmd_opts.blur_size = atoi(optarg);
 				break;
@@ -449,9 +447,8 @@ int main(const int argc, char ** argv){
 	}
 	int i, nlocks = 0;;
 	for(i = 0; i <nscreens; i++){
-//		lockscreen(disp, &lock);
 		locks[i].screen = i;
-		if(lockscreen(disp, &locks[i])) nlocks++;
+		if(lockscreen(disp, &cmd_opts, &locks[i])) nlocks++;
 	}
 	XSync(disp, FALSE);
 	if(!nlocks){
@@ -464,7 +461,6 @@ int main(const int argc, char ** argv){
 	printf("locked!\n");
 	readpw(disp, pws);
 	for(i = 0; i <nscreens; i++){
-//		lockscreen(disp, &lock);
 		unlockscreen(disp, &locks[i]);
 	}
 	free(locks);
