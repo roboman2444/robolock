@@ -37,6 +37,10 @@ typedef struct lock_s {
 	unsigned int height;
 } lock_t;
 
+typedef struct lock_opt {
+	int blur_size;
+} lock_opt;
+
 int running = TRUE;
 int rr = FALSE;
 int failure = FALSE;
@@ -403,10 +407,28 @@ int lockscreen(Display * disp, lock_t *lock){
 }
 
 
-int main(const int argc, const char ** argv){
+int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
-//	int screen;
+    lock_opt cmd_opts;
+	{
+		/* default blur size */
+		cmd_opts.blur_size = 25;
+	}
+
+	int c;
+	while((c = getopt(argc, argv, "b:")) != -1) {
+		switch(c) {
+			case 'b':
+				cmd_opts.blur_size = atoi(optarg);
+				break;
+			case '?':
+				if (optopt == 'b') {
+					fprintf(stderr, "-b --blur [int]: missing [int]");
+				}
+				break;
+		}
+	}
 
 	if(!getpwuid(getuid())){
 		printf("unable to get pwuid or shit\n");
