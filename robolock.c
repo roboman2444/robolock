@@ -31,6 +31,7 @@ typedef struct lock_s {
 	int screen;
 	Window root, win;
 	Pixmap pmap;
+	Pixmap cpmap;
 	XImage * screenshot;
 	char *scrdata;
 	unsigned int width;
@@ -154,6 +155,7 @@ int unlockscreen(Display * disp, lock_t * lock){
 	XUngrabPointer(disp, CurrentTime);
 	//XFreeColors(disp, DefaultColormap(disp, lock->screen), lock->colors, NUMCOLS, 0);
 	if(lock->pmap)XFreePixmap(disp, lock->pmap);
+	if(lock->cpmap)XFreePixmap(disp, lock->cpmap);
 	if(lock->screenshot)XDestroyImage(lock->screenshot);
 	XDestroyWindow(disp, lock->win);
 	memset(lock, 0, sizeof(lock_t));
@@ -345,8 +347,9 @@ int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsign
 int lockscreen(Display * disp, lock_t *lock){
 	if(!disp || !lock) return FALSE;
 	GC gc;
-//	Cursor invisible;
-//	char curs[] = {0,0,0,0,0,0,0,0};
+	Cursor invisible;
+	char curs[] = {0,0,0,0,0,0,0,0};
+	XColor color = {0};
 //	size_t len;
 //	int i;
 	XSetWindowAttributes wa;
@@ -371,16 +374,22 @@ int lockscreen(Display * disp, lock_t *lock){
 	lock->win = XCreateWindow(disp, lock->root, 0, 0, lock->width, lock->height, 0, DefaultDepth(disp, lock->screen),
 	CopyFromParent, DefaultVisual(disp, lock->screen), CWOverrideRedirect|CWBackPixmap, &wa);
 
+	lock->cpmap = XCreateBitmapFromData(disp, lock->win, curs, 8, 8);
+	invisible = XCreatePixmapCursor(disp, lock->cpmap, lock->cpmap, &color, &color, 0, 0);
+	XDefineCursor(disp, lock->win, invisible);
+
 	XMapRaised(disp, lock->win);
+	if(lock->cpmap)XFreePixmap(disp, lock->cpmap);
+	lock->cpmap = 0;
 
 
 //	if(rr) XRRSelectInput(disp, lock->win, RRScreenChangeNotifyMask);
 	int i = 1000;
-	/*for(i = 1000; i; i--){
+	for(i = 1000; i; i--){
 		if(XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 			GrabModeAsync, GrabModeAsync, None, invisible, CurrentTime) == GrabSuccess) break;
 		usleep(1000);
-	}*/
+	}
 	if(running && i){
 		for(i = 1000; i; i--){
 			if(XGrabKeyboard(disp, lock->root, True, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess) break;
