@@ -23,7 +23,6 @@
 
 #define TRUE 1
 #define FALSE 0
-//slock as a ref
 
 
 
@@ -143,8 +142,7 @@ void readpw(Display *disp, const char *pws){
 				}
 			break;
 			}
-//			color = len ? INPUT
-		} //else if (rr &
+		}
 		else for(screen = 0; screen < nscreens; screen++) XRaiseWindow(disp, locks[screen].win);
 	}
 }
@@ -251,8 +249,6 @@ void postprocessy(ppargs_t * args){
 	float halfheightsq = (float)(halfheight * halfheight);
 	float halfwidthsq = (float)(halfwidth * halfwidth);
 
-//	printf("mythread %i, numthreads %i\n", mythread, numthreads);
-
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -308,7 +304,6 @@ int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
 	int depth = lock->screenshot->depth / 8;
 	if(depth == 3) depth =4;
-	//printf("adada %i\n", depth);
 	unsigned char * data = malloc (width * height * depth);
 	unsigned char * input = (unsigned char *) lock->screenshot->data;
 
@@ -377,7 +372,6 @@ int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
 	cpmap = 0;
 
 
-//	if(rr) XRRSelectInput(disp, lock->win, RRScreenChangeNotifyMask);
 	int i = 1000;
 	for(i = 1000; i; i--){
 		if(XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
