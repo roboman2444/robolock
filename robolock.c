@@ -154,7 +154,7 @@ int unlockscreen(Display * disp, lock_t * lock){
 	XUngrabPointer(disp, CurrentTime);
 	//XFreeColors(disp, DefaultColormap(disp, lock->screen), lock->colors, NUMCOLS, 0);
 	if(lock->pmap)XFreePixmap(disp, lock->pmap);
-	if(lock->image)XDestroyImage(lock->image);
+	if(lock->screenshot)XDestroyImage(lock->screenshot);
 	XDestroyWindow(disp, lock->win);
 	memset(lock, 0, sizeof(lock_t));
 	return TRUE;
