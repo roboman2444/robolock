@@ -41,6 +41,7 @@ typedef struct lock_s {
 typedef struct options_s {
 	unsigned int blur_size;
 	unsigned int threads;
+	char * imagename;
 } options_t;
 
 int running = TRUE;
@@ -478,6 +479,51 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 }
 
 
+#include "stb_image.h"
+
+int getimage(Display *disp, lock_t *lock){
+	char * filename = opts.imagename;
+	if(!disp || !lock) return FALSE;
+	int x, y, n;
+	unsigned char * imagedata = 0;
+	if(filename)imagedata = stbi_load(filename, &x, &y, &n, 0);
+
+	int width = lock->width;
+	int height = lock->height;
+
+	//cheating
+	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
+	lock->depth = lock->screenshot->depth / 8;
+	if(lock->depth == 3) lock->depth =4;
+
+
+
+
+	lock->scrdata = malloc(lock->depth * width * height);
+	unsigned char *outdata = lock->scrdata;
+	if(imagedata && n){
+		int ix, iy;
+		for(iy = 0; iy<y && iy < height; iy++){
+			for(ix = 0; ix<x && ix < width; ix++){
+				int in;
+				for(in = 0; in < n && in < 4; in++){
+					outdata[(iy * width + ix) * 4 + in] = imagedata[(iy * x + ix) * n + in];
+				}
+			}
+		}
+		stbi_image_free(imagedata);
+	} else memset(outdata, 120, 4*width*height);
+
+	memcpy(lock->screenshot->data, lock->scrdata, 4 * width * height);
+
+//	lock->screenshot = XCreateImage(disp, CopyFromParent, 32, ZPixmap, 0, (char *)outdata, width, height, 32, 0);
+//	lock->depth = 4;
+//	free(outdata);
+	printf("here\n");
+	return TRUE;
+}
+
+
 
 
 int lockscreen(Display *disp, lock_t *lock){
@@ -492,7 +538,13 @@ int lockscreen(Display *disp, lock_t *lock){
 	lock->height = DisplayHeight(disp, lock->screen);
 
 	lock->gc = XCreateGC(disp, lock->root, 0, 0);
-	getscreenshot(disp, lock);
+
+	if(opts.imagename){
+		getimage(disp, lock);
+	} else {
+		getscreenshot(disp, lock);
+	}
+
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
 	XPutImage(disp, lock->pmap, lock->gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 
@@ -545,11 +597,16 @@ int main(const int argc, char ** argv){
         /* default thread count */
         opts.threads = 8;
 
+	opts.imagename = 0;
+
 	int c;
-	while((c = getopt(argc, argv, "b:t:")) != -1) {
+	while((c = getopt(argc, argv, "b:t:i:")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
+				break;
+			case 'i':
+				opts.imagename = optarg;
 				break;
 			case 'b':
 				opts.blur_size = atoi(optarg);
@@ -561,7 +618,6 @@ int main(const int argc, char ** argv){
 				break;
 		}
 	}
-
 	if(!getpwuid(getuid())){
 		printf("unable to get pwuid or shit\n");
 		return TRUE;
@@ -570,7 +626,7 @@ int main(const int argc, char ** argv){
 	outofmemnokill();
 
 	nscreens = 1;
-	locks = malloc( nscreens * sizeof(lock_t));
+	locks = malloc(nscreens * sizeof(lock_t));
 
 	memset(locks, 0, nscreens * sizeof(lock_t));
 

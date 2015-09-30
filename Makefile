@@ -1,7 +1,7 @@
 CC = gcc
-LDFLAGS = -lX11 -lpthread -lcrypt -lXext -lXrandr -lc
-CFLAGS = -Wall -Ofast  -fstrict-aliasing -march=native
-OBJECTS = robolock.o
+LDFLAGS = -lX11 -lpthread -lcrypt -lXext -lXrandr -lc -lm
+CFLAGS = -Wall -Ofast -fstrict-aliasing -march=native
+OBJECTS = robolock.o stb_image_precompile.o
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -14,8 +14,6 @@ robolock: $(OBJECTS)
 debug:	CFLAGS= -Wall -O0 -g  -fstrict-aliasing -march=native
 debug: 	$(OBJECTS)
 	$(CC) $(CFLAGS) $(OBJECTS) -o robolock-$@ $(LDFLAGS)
-	@chmod 755 robolock-$@
-	@chmod u+s robolock-$@
 
 
 clean:
