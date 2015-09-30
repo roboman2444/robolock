@@ -42,8 +42,8 @@ typedef struct options_s {
 	unsigned int blur_size;
 	unsigned int threads;
 	char *imagename;
-    XColor *colors;
-    unsigned int color_count;
+	XColor *colors;
+	unsigned int color_count;
 } options_t;
 
 int running = TRUE;
@@ -347,11 +347,11 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 }
 
 int pickRandomColor(Display *disp, lock_t *lock, XColor *colors, int color_count) {
-    int color = rand() % color_count;
-    float r = colors[color].red / 65536.0;
-    float g = colors[color].green / 65536.0;
-    float b = colors[color].blue / 65536.0;
-    return updateColor(disp, lock, r-1.0, g-1.0, b-1.0);
+	int color = rand() % color_count;
+	float r = colors[color].red / 65536.0;
+	float g = colors[color].green / 65536.0;
+	float b = colors[color].blue / 65536.0;
+	return updateColor(disp, lock, r-1.0, g-1.0, b-1.0);
 }
 
 
@@ -466,17 +466,17 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 				if(num && !iscntrl((int) buf[0]) && (len + num < sizeof(passwd))){
 					memcpy(passwd + len, buf, num);
 					len+= num;
-                    unsigned int i;
+					unsigned int i;
 					for(i= 0; i <numlocks; i++){
-					    if (opts.colors) {
-                            pickRandomColor(disp, &locks[i], opts.colors, opts.color_count);
-                        } else {
-                            updateColor(disp, &locks[i],
-							    ((float)rand()*2.0)/(float)RAND_MAX,
-						        ((float)rand()*2.0)/(float)RAND_MAX,
-							    ((float)rand()*2.0)/(float)RAND_MAX);
-                        }
-                    }
+						if (opts.colors) {
+							pickRandomColor(disp, &locks[i], opts.colors, opts.color_count);
+						} else {
+							updateColor(disp, &locks[i],
+								((float)rand()*2.0)/(float)RAND_MAX,
+								((float)rand()*2.0)/(float)RAND_MAX,
+								((float)rand()*2.0)/(float)RAND_MAX);
+						}
+					}
 				}
 			break;
 			}
@@ -613,61 +613,61 @@ int lockscreen(Display *disp, lock_t *lock){
 }
 
 int doMakeColor(XColor *at, char *str, Display *disp) {
-    XVisualInfo vinfo;
-    XMatchVisualInfo(disp, DefaultScreen(disp), 32, TrueColor, &vinfo);
-    XSetWindowAttributes wa;
-    wa.colormap = XCreateColormap(disp,
-            DefaultRootWindow(disp),
-            vinfo.visual,
-            AllocNone);
-    wa.border_pixel = 0;
-    wa.background_pixel = 0;
-    
-    if(!XAllocNamedColor(disp, wa.colormap, str, at, at)) {
-        return 0;
-    }
+	XVisualInfo vinfo;
+	XMatchVisualInfo(disp, DefaultScreen(disp), 32, TrueColor, &vinfo);
+	XSetWindowAttributes wa;
+	wa.colormap = XCreateColormap(disp,
+			DefaultRootWindow(disp),
+			vinfo.visual,
+			AllocNone);
+	wa.border_pixel = 0;
+	wa.background_pixel = 0;
+	
+	if(!XAllocNamedColor(disp, wa.colormap, str, at, at)) {
+		return 0;
+	}
 
-    return 1;
+	return 1;
 }
 
 void parseColors(char *optarg, Display *disp) {
-    int rec_colors = 0;
-    int max_colors = 4;
-    int last_hash = -1;
-    XColor *colors = malloc(sizeof(XColor) * max_colors);
-    int done = 0;
+	int rec_colors = 0;
+	int max_colors = 4;
+	int last_hash = -1;
+	XColor *colors = malloc(sizeof(XColor) * max_colors);
+	int done = 0;
 
-    int ctr = 0;
-    while(optarg[ctr]) {
-        switch(optarg[ctr]) {
-            case '#':
-                last_hash = ctr;
-                break;
-            case ' ':
+	int ctr = 0;
+	while(optarg[ctr]) {
+		switch(optarg[ctr]) {
+			case '#':
+				last_hash = ctr;
+				break;
+			case ' ':
 makenew:
-                if (last_hash != -1) {
-                    optarg[ctr] = 0;
-                    if (rec_colors == max_colors) {
-                        max_colors *=2;
-                        colors = realloc(colors, sizeof(XColor) * max_colors);
-                    }
-                    doMakeColor((colors + rec_colors++)
-                               ,(optarg + last_hash)
-                               ,disp);
-                    last_hash = -1;
-                }
-                if (done) {
-                    goto fillargs;
-                }
-                break;
-        }
-        ctr++;
-    }
-    done = 1;
-    goto makenew;
+				if (last_hash != -1) {
+					optarg[ctr] = 0;
+					if (rec_colors == max_colors) {
+						max_colors *=2;
+						colors = realloc(colors, sizeof(XColor) * max_colors);
+					}
+					doMakeColor((colors + rec_colors++)
+							   ,(optarg + last_hash)
+							   ,disp);
+					last_hash = -1;
+				}
+				if (done) {
+					goto fillargs;
+				}
+				break;
+		}
+		ctr++;
+	}
+	done = 1;
+	goto makenew;
 fillargs:
-    opts.colors = colors;
-    opts.color_count = rec_colors;
+	opts.colors = colors;
+	opts.color_count = rec_colors;
 }
 
 
@@ -675,21 +675,21 @@ int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
 	disp = XOpenDisplay(0);
-    
-    {
-        /* default blur size */
-	    opts.blur_size = 25;
+	
+	{
+		/* default blur size */
+		opts.blur_size = 25;
 
-        /* default thread count */
-        opts.threads = 8;
+		/* default thread count */
+		opts.threads = 8;
 
-        /* default image name */
-	    opts.imagename = 0;
+		/* default image name */
+		opts.imagename = 0;
 
-        /* default color set */
-        opts.color_count = 0;
-        opts.colors = 0;
-    }
+		/* default color set */
+		opts.color_count = 0;
+		opts.colors = 0;
+	}
 
 	int c;
 	while((c = getopt(argc, argv, "b:t:i:c:")) != -1) {
@@ -708,24 +708,24 @@ int main(const int argc, char ** argv){
 				break;
 			case '?':
 				switch(optopt) {
-                    case 'b':
-					    fprintf(stderr, "-b --blur [int]: missing [int]\n");
-				        exit(1);
-                        break;
-                    case 'c':
-					    fprintf(stderr, "-c --colorset \"#xxxxxx ...\": missing \"#xxxxxx ...\"\n");
-                        exit(1);
-                        break;
-                    case 'i':
-					    fprintf(stderr, "-i --image [path]: missing [path]\n");
-                        opts.imagename = "";
-                        break;
-                    case 't':
-                        fprintf(stderr, "-t --threads [int]: missing [int]\n");
-                        exit(1);
-                        break;
-                }
-                break;
+					case 'b':
+						fprintf(stderr, "-b --blur [int]: missing [int]\n");
+						exit(1);
+						break;
+					case 'c':
+						fprintf(stderr, "-c --colorset \"#xxxxxx ...\": missing \"#xxxxxx ...\"\n");
+						exit(1);
+						break;
+					case 'i':
+						fprintf(stderr, "-i --image [path]: missing [path]\n");
+						opts.imagename = "";
+						break;
+					case 't':
+						fprintf(stderr, "-t --threads [int]: missing [int]\n");
+						exit(1);
+						break;
+				}
+				break;
 		}
 	}
 	if(!getpwuid(getuid())){
