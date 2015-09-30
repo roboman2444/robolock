@@ -129,7 +129,7 @@ typedef struct ppargs_s {
 	unsigned int width;
 	unsigned int height;
 	unsigned int depth;
-	float r, g, b;
+	float r, g, b, s;
 	pthread_t t;
 } ppargs_t;
 
@@ -262,6 +262,8 @@ void postprocesscolor(ppargs_t *args){
 	float halfheightsq = (float)(halfheight * halfheight);
 	float halfwidthsq = (float)(halfwidth * halfwidth);
 
+	float start = args->s;
+
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -277,9 +279,9 @@ void postprocesscolor(ppargs_t *args){
 
 			int xdistcenter = abs(halfwidth - myx);
 			float xdistsq = (float)(xdistcenter * xdistcenter);
-			float distr = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * red;
-			float distg = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * green;
-			float distb = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * blue;
+			float distr = start - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * red;
+			float distg = start - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * green;
+			float distb = start - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * blue;
 			if(distr < 0.0) distr = 0.0;
 			if(distg < 0.0) distg = 0.0;
 			if(distb < 0.0) distb = 0.0;
@@ -310,12 +312,13 @@ void postprocesscolor(ppargs_t *args){
 float lastr = 0.0;
 float lastg = 0.0;
 float lastb = 0.0;
+float lasts = 0.0;
 
-int updateColor(Display *disp, lock_t *lock, float red, float green, float blue){
+int updateColor(Display *disp, lock_t *lock, float red, float green, float blue, float start){
 
 	if(opts.threads < 1) return FALSE;
 
-	if(lastr == red && lastg == green && lastb == blue) return 2;
+	if(lastr == red && lastg == green && lastb == blue && lasts == start) return 2;
 
 	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
@@ -331,6 +334,7 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 		mythreads[i].r = red;
 		mythreads[i].g = green;
 		mythreads[i].b = blue;
+		mythreads[i].s = start;
 		pthread_create(&mythreads[i].t, NULL, (void * )postprocesscolor, (void *)&mythreads[i]);
 	}
 	for(i = 0; i < opts.threads; i++){
@@ -342,6 +346,7 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 	lastr = red;
 	lastg = green;
 	lastb = blue;
+	lasts = start;
 
 	return TRUE;
 }
@@ -351,7 +356,7 @@ int pickRandomColor(Display *disp, lock_t *lock, XColor *colors, int color_count
 	float r = colors[color].red / 65536.0;
 	float g = colors[color].green / 65536.0;
 	float b = colors[color].blue / 65536.0;
-	return updateColor(disp, lock, r-1.0, g-1.0, b-1.0);
+	return updateColor(disp, lock, r-1.0, g-1.0, b-1.0, 1.0);
 }
 
 
@@ -431,7 +436,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 				if(running){
 					unsigned int i;
 					for(i= 0; i <numlocks; i++){
-						updateColor(disp, &locks[i], 0.0, 2.0, 2.0);
+						updateColor(disp, &locks[i], -2.0, 0.0, 0.0, 0.0);
 					}
 					XBell(disp, 100);
 					failure = TRUE;
@@ -442,7 +447,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 				len = 0;
 				unsigned int i;
 				for(i= 0; i <numlocks; i++){
-					updateColor(disp, &locks[i], 1.0, 1.0, 1.0);
+					updateColor(disp, &locks[i], 1.0, 1.0, 1.0, 1.0);
 				}
 			break;
 			case XK_BackSpace:
@@ -451,16 +456,15 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					unsigned int i;
 					if(len){
 						for(i= 0; i <numlocks; i++){
-							if(bscolorthing)updateColor(disp, &locks[i], -2.0, -2.0, -2.0);
-							else updateColor(disp, &locks[i], 2.0, 2.0, 2.0);
+							if(bscolorthing)updateColor(disp, &locks[i], -2.0, -2.0, -2.0, 0.0);
+							else updateColor(disp, &locks[i], 2.0, 2.0, 2.0, 1.0);
 						}
 						bscolorthing = !bscolorthing;
-					} else {
-						for(i= 0; i <numlocks; i++){
-							updateColor(disp, &locks[i], 1.0, 1.0, 1.0);
-						}
 					}
 				}
+				//ted dont change this its beautiful
+				for(i= 0; i <numlocks && !len; i++)updateColor(disp, &locks[i], 1.0, 1.0, 1.0, 1.0);
+
 			break;
 			default:
 				if(num && !iscntrl((int) buf[0]) && (len + num < sizeof(passwd))){
@@ -474,7 +478,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 							updateColor(disp, &locks[i],
 								((float)rand()*2.0)/(float)RAND_MAX,
 								((float)rand()*2.0)/(float)RAND_MAX,
-								((float)rand()*2.0)/(float)RAND_MAX);
+								((float)rand()*2.0)/(float)RAND_MAX, 1.0);
 						}
 					}
 				}
@@ -589,7 +593,7 @@ int lockscreen(Display *disp, lock_t *lock){
 	if(cpmap)XFreePixmap(disp, cpmap);
 	cpmap = 0;
 
-	updateColor(disp, lock, 1.0, 1.0, 1.0);
+	updateColor(disp, lock, 1.0, 1.0, 1.0, 1.0);
 
 
 	int i = 1000;
