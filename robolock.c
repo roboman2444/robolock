@@ -36,10 +36,10 @@ typedef struct lock_s {
 	unsigned int height;
 } lock_t;
 
-typedef struct lock_opt {
+typedef struct options_s {
 	unsigned int blur_size;
-    unsigned int threads;
-} lock_opt;
+	unsigned int threads;
+} options_t;
 
 int running = TRUE;
 int rr = FALSE;
@@ -47,6 +47,8 @@ int failure = FALSE;
 
 lock_t *locks;
 int nscreens = 0;
+
+options_t opts = {0};
 
 
 #include <linux/oom.h>
@@ -295,9 +297,9 @@ void postprocessy(ppargs_t * args){
 }
 
 
-int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
+int getscreenshot(Display * disp, lock_t *lock){
 
-	if(cmd->threads < 1) return FALSE;
+	if(opts.threads < 1) return FALSE;
 
 	unsigned int width = lock->width;
 	unsigned int height = lock->height;
@@ -309,26 +311,26 @@ int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
 
 	memcpy(data, input, width * height * depth);
 
-	ppargs_t * mythreads = malloc(cmd->threads * sizeof(ppargs_t));
+	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
-	for(i = 0; i < cmd->threads; i++){
+	for(i = 0; i < opts.threads; i++){
 		mythreads[i].d1 = data;
 		mythreads[i].d2 = input;
-		mythreads[i].blursize = cmd->blur_size;
-		mythreads[i].numthreads = cmd->threads;
+		mythreads[i].blursize = opts.blur_size;
+		mythreads[i].numthreads = opts.threads;
 		mythreads[i].mythread = i;
 		mythreads[i].width = width;
 		mythreads[i].height = height;
 		mythreads[i].depth = depth;
 		pthread_create(&mythreads[i].t, NULL, (void * )postprocessx, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < cmd->threads; i++){
+	for(i = 0; i < opts.threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
-	for(i = 0; i < cmd->threads; i++){
+	for(i = 0; i < opts.threads; i++){
 		pthread_create(&mythreads[i].t, NULL, (void *) postprocessy, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < cmd->threads; i++){
+	for(i = 0; i < opts.threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
 
@@ -338,7 +340,7 @@ int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
 	return TRUE;
 }
 
-int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
+int lockscreen(Display *disp, lock_t *lock){
 	if(!disp || !lock) return FALSE;
 	GC gc;
 	Cursor invisible;
@@ -351,7 +353,7 @@ int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
 	lock->height = DisplayHeight(disp, lock->screen);
 
 	gc = XCreateGC(disp, lock->root, 0, 0);
-	getscreenshot(disp, lock, cmd);
+	getscreenshot(disp, lock);
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
 	XPutImage(disp, lock->pmap, gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 
@@ -396,23 +398,20 @@ int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
 int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
-    lock_opt cmd_opts;
-	{
-		/* default blur size */
-		cmd_opts.blur_size = 25;
+	/* default blur size */
+	opts.blur_size = 25;
 
         /* default thread count */
-        cmd_opts.threads = 8;
-	}
+        opts.threads = 8;
 
 	int c;
 	while((c = getopt(argc, argv, "b:t:")) != -1) {
 		switch(c) {
 			case 't':
-				cmd_opts.threads = atoi(optarg);
+				opts.threads = atoi(optarg);
 				break;
 			case 'b':
-				cmd_opts.blur_size = atoi(optarg);
+				opts.blur_size = atoi(optarg);
 				break;
 			case '?':
 				if (optopt == 'b') {
@@ -442,7 +441,7 @@ int main(const int argc, char ** argv){
 	int i, nlocks = 0;;
 	for(i = 0; i <nscreens; i++){
 		locks[i].screen = i;
-		if(lockscreen(disp, &cmd_opts, &locks[i])) nlocks++;
+		if(lockscreen(disp, &locks[i])) nlocks++;
 	}
 	XSync(disp, FALSE);
 	if(!nlocks){
