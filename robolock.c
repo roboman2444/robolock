@@ -23,7 +23,6 @@
 
 #define TRUE 1
 #define FALSE 0
-//slock as a ref
 
 
 
@@ -36,6 +35,11 @@ typedef struct lock_s {
 	unsigned int width;
 	unsigned int height;
 } lock_t;
+
+typedef struct lock_opt {
+	unsigned int blur_size;
+    unsigned int threads;
+} lock_opt;
 
 int running = TRUE;
 int rr = FALSE;
@@ -98,10 +102,9 @@ char * getpw(void){
 void readpw(Display *disp, const char *pws){
 	char buf[32], passwd[256];
 	int num, screen;
-	unsigned int len, color;
+	unsigned int len;
 	KeySym ksym;
 	XEvent ev;
-//	static int oldc = INIT;
 	len = 0;
 	running = TRUE;
 
@@ -118,11 +121,9 @@ void readpw(Display *disp, const char *pws){
 			switch(ksym){
 			case XK_Return:
 				passwd[len] = 0;
-//				printf("pws %s\npasswd %s\n", pws, passwd);
 
 				running = !!strcmp(crypt(passwd, pws), pws);
 				if(running){
-					//HERE
 					XBell(disp, 100);
 					failure = TRUE;
 				}
@@ -141,8 +142,7 @@ void readpw(Display *disp, const char *pws){
 				}
 			break;
 			}
-//			color = len ? INPUT
-		} //else if (rr &
+		}
 		else for(screen = 0; screen < nscreens; screen++) XRaiseWindow(disp, locks[screen].win);
 	}
 }
@@ -152,7 +152,6 @@ void readpw(Display *disp, const char *pws){
 int unlockscreen(Display * disp, lock_t * lock){
 	if(!disp || !lock) return FALSE;
 	XUngrabPointer(disp, CurrentTime);
-	//XFreeColors(disp, DefaultColormap(disp, lock->screen), lock->colors, NUMCOLS, 0);
 	if(lock->pmap)XFreePixmap(disp, lock->pmap);
 	if(lock->screenshot)XDestroyImage(lock->screenshot);
 	XDestroyWindow(disp, lock->win);
@@ -250,8 +249,6 @@ void postprocessy(ppargs_t * args){
 	float halfheightsq = (float)(halfheight * halfheight);
 	float halfwidthsq = (float)(halfwidth * halfwidth);
 
-//	printf("mythread %i, numthreads %i\n", mythread, numthreads);
-
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -298,41 +295,40 @@ void postprocessy(ppargs_t * args){
 }
 
 
-int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsigned int numthreads){
+int getscreenshot(Display * disp, lock_t *lock, lock_opt *cmd){
 
-	if(numthreads < 1) return FALSE;
+	if(cmd->threads < 1) return FALSE;
 
 	unsigned int width = lock->width;
 	unsigned int height = lock->height;
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
 	int depth = lock->screenshot->depth / 8;
 	if(depth == 3) depth =4;
-	//printf("adada %i\n", depth);
 	unsigned char * data = malloc (width * height * depth);
 	unsigned char * input = (unsigned char *) lock->screenshot->data;
 
 	memcpy(data, input, width * height * depth);
 
-	ppargs_t * mythreads = malloc(numthreads * sizeof(ppargs_t));
+	ppargs_t * mythreads = malloc(cmd->threads * sizeof(ppargs_t));
 	int i;
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		mythreads[i].d1 = data;
 		mythreads[i].d2 = input;
-		mythreads[i].blursize = blursize;
-		mythreads[i].numthreads = numthreads;
+		mythreads[i].blursize = cmd->blur_size;
+		mythreads[i].numthreads = cmd->threads;
 		mythreads[i].mythread = i;
 		mythreads[i].width = width;
 		mythreads[i].height = height;
 		mythreads[i].depth = depth;
 		pthread_create(&mythreads[i].t, NULL, (void * )postprocessx, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_create(&mythreads[i].t, NULL, (void *) postprocessy, (void *)&mythreads[i]);
 	}
-	for(i = 0; i < numthreads; i++){
+	for(i = 0; i < cmd->threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
 
@@ -342,25 +338,20 @@ int getscreenshot(Display * disp, lock_t *lock, const int blursize, const unsign
 	return TRUE;
 }
 
-int lockscreen(Display * disp, lock_t *lock){
+int lockscreen(Display *disp, lock_opt *cmd, lock_t *lock){
 	if(!disp || !lock) return FALSE;
 	GC gc;
 	Cursor invisible;
 	char curs[] = {0,0,0,0,0,0,0,0};
 	XColor color = {0};
-//	size_t len;
-//	int i;
 	XSetWindowAttributes wa;
-//	for(i = 0; i < NUMCOLS; i++){
-//		XAllocNamedCOlor(disp, DefaultColormap(disp, lock->screen), colorname[i], &color, &dummy);
-//	}
 	lock->root = RootWindow(disp, lock->screen);
 
 	lock->width = DisplayWidth(disp, lock->screen);
 	lock->height = DisplayHeight(disp, lock->screen);
 
 	gc = XCreateGC(disp, lock->root, 0, 0);
-	getscreenshot(disp, lock, 25, 8);
+	getscreenshot(disp, lock, cmd);
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
 	XPutImage(disp, lock->pmap, gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 
@@ -381,7 +372,6 @@ int lockscreen(Display * disp, lock_t *lock){
 	cpmap = 0;
 
 
-//	if(rr) XRRSelectInput(disp, lock->win, RRScreenChangeNotifyMask);
 	int i = 1000;
 	for(i = 1000; i; i--){
 		if(XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
@@ -403,10 +393,34 @@ int lockscreen(Display * disp, lock_t *lock){
 }
 
 
-int main(const int argc, const char ** argv){
+int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
-//	int screen;
+    lock_opt cmd_opts;
+	{
+		/* default blur size */
+		cmd_opts.blur_size = 25;
+
+        /* default thread count */
+        cmd_opts.threads = 8;
+	}
+
+	int c;
+	while((c = getopt(argc, argv, "b:t:")) != -1) {
+		switch(c) {
+			case 't':
+				cmd_opts.threads = atoi(optarg);
+				break;
+			case 'b':
+				cmd_opts.blur_size = atoi(optarg);
+				break;
+			case '?':
+				if (optopt == 'b') {
+					fprintf(stderr, "-b --blur [int]: missing [int]");
+				}
+				break;
+		}
+	}
 
 	if(!getpwuid(getuid())){
 		printf("unable to get pwuid or shit\n");
@@ -427,9 +441,8 @@ int main(const int argc, const char ** argv){
 	}
 	int i, nlocks = 0;;
 	for(i = 0; i <nscreens; i++){
-//		lockscreen(disp, &lock);
 		locks[i].screen = i;
-		if(lockscreen(disp, &locks[i])) nlocks++;
+		if(lockscreen(disp, &cmd_opts, &locks[i])) nlocks++;
 	}
 	XSync(disp, FALSE);
 	if(!nlocks){
@@ -442,7 +455,6 @@ int main(const int argc, const char ** argv){
 	printf("locked!\n");
 	readpw(disp, pws);
 	for(i = 0; i <nscreens; i++){
-//		lockscreen(disp, &lock);
 		unlockscreen(disp, &locks[i]);
 	}
 	free(locks);
