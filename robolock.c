@@ -31,7 +31,7 @@ typedef struct lock_s {
 	Window root, win;
 	Pixmap pmap;
 	GC gc;
-	XImage * screenshot;
+	XImage *screenshot;
 	unsigned char *scrdata;
 	unsigned int depth;
 	unsigned int width;
@@ -41,7 +41,9 @@ typedef struct lock_s {
 typedef struct options_s {
 	unsigned int blur_size;
 	unsigned int threads;
-	char * imagename;
+	char *imagename;
+	XColor *colors;
+	unsigned int color_count;
 } options_t;
 
 int running = TRUE;
@@ -146,8 +148,6 @@ void postprocessx(ppargs_t * args){
 	int blursize = args->blursize;
 
 	float blursquare = (float)(blursize * blursize);
-
-	printf("mythread %i, numthreads %i, blursize %i\n", mythread, numthreads, blursize);
 
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
@@ -299,7 +299,6 @@ void postprocesscolor(ppargs_t *args){
 			if(fg > 255) fg = 255;
 			if(fr > 255) fr = 255;
 			unsigned int result = fb | fg << 8 | fr<<16;
-//			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
 			*((unsigned int *)xoutput) = result;
 		}
 	}
@@ -308,12 +307,9 @@ void postprocesscolor(ppargs_t *args){
 }
 
 
-
 float lastr = 0.0;
 float lastg = 0.0;
 float lastb = 0.0;
-
-
 
 int updateColor(Display *disp, lock_t *lock, float red, float green, float blue){
 
@@ -343,13 +339,21 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 	XPutImage(disp, lock->pmap, lock->gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 	XClearWindow(disp, lock->win);
 	free(mythreads);
-//	free(data);
 	lastr = red;
 	lastg = green;
 	lastb = blue;
 
 	return TRUE;
 }
+
+int pickRandomColor(Display *disp, lock_t *lock, XColor *colors, int color_count) {
+	int color = rand() % color_count;
+	float r = colors[color].red / 65536.0;
+	float g = colors[color].green / 65536.0;
+	float b = colors[color].blue / 65536.0;
+	return updateColor(disp, lock, r-1.0, g-1.0, b-1.0);
+}
+
 
 int getscreenshot(Display * disp, lock_t *lock){
 
@@ -464,12 +468,15 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					len+= num;
 					unsigned int i;
 					for(i= 0; i <numlocks; i++){
-						updateColor(disp, &locks[i],
-							((float)rand()*2.0)/(float)RAND_MAX,
-							((float)rand()*2.0)/(float)RAND_MAX,
-							((float)rand()*2.0)/(float)RAND_MAX);
+						if (opts.colors) {
+							pickRandomColor(disp, &locks[i], opts.colors, opts.color_count);
+						} else {
+							updateColor(disp, &locks[i],
+								((float)rand()*2.0)/(float)RAND_MAX,
+								((float)rand()*2.0)/(float)RAND_MAX,
+								((float)rand()*2.0)/(float)RAND_MAX);
+						}
 					}
-
 				}
 			break;
 			}
@@ -491,7 +498,6 @@ int getimage(Display *disp, lock_t *lock){
 	int width = lock->width;
 	int height = lock->height;
 
-	//cheating
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
 	lock->depth = lock->screenshot->depth / 8;
 	if(lock->depth == 3) lock->depth =4;
@@ -539,10 +545,6 @@ int getimage(Display *disp, lock_t *lock){
 
 	memcpy(lock->screenshot->data, lock->scrdata, 4 * width * height);
 
-//	lock->screenshot = XCreateImage(disp, CopyFromParent, 32, ZPixmap, 0, (char *)outdata, width, height, 32, 0);
-//	lock->depth = 4;
-//	free(outdata);
-//	printf("here\n");
 	return TRUE;
 }
 
@@ -610,23 +612,93 @@ int lockscreen(Display *disp, lock_t *lock){
 	return TRUE;
 }
 
+int doMakeColor(XColor *at, char *str, Display *disp) {
+	XVisualInfo vinfo;
+	XMatchVisualInfo(disp, DefaultScreen(disp), 32, TrueColor, &vinfo);
+	XSetWindowAttributes wa;
+	wa.colormap = XCreateColormap(disp,
+			DefaultRootWindow(disp),
+			vinfo.visual,
+			AllocNone);
+	wa.border_pixel = 0;
+	wa.background_pixel = 0;
+	
+	if(!XAllocNamedColor(disp, wa.colormap, str, at, at)) {
+		return 0;
+	}
+
+	return 1;
+}
+
+void parseColors(char *optarg, Display *disp) {
+	int rec_colors = 0;
+	int max_colors = 4;
+	int last_hash = -1;
+	XColor *colors = malloc(sizeof(XColor) * max_colors);
+	int done = 0;
+
+	int ctr = 0;
+	while(optarg[ctr]) {
+		switch(optarg[ctr]) {
+			case '#':
+				last_hash = ctr;
+				break;
+			case ' ':
+makenew:
+				if (last_hash != -1) {
+					optarg[ctr] = 0;
+					if (rec_colors == max_colors) {
+						max_colors *=2;
+						colors = realloc(colors, sizeof(XColor) * max_colors);
+					}
+					doMakeColor((colors + rec_colors++)
+							   ,(optarg + last_hash)
+							   ,disp);
+					last_hash = -1;
+				}
+				if (done) {
+					goto fillargs;
+				}
+				break;
+		}
+		ctr++;
+	}
+	done = 1;
+	goto makenew;
+fillargs:
+	opts.colors = colors;
+	opts.color_count = rec_colors;
+}
+
 
 int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
-	/* default blur size */
-	opts.blur_size = 25;
+	disp = XOpenDisplay(0);
+	
+	{
+		/* default blur size */
+		opts.blur_size = 25;
 
-        /* default thread count */
-        opts.threads = 8;
+		/* default thread count */
+		opts.threads = 8;
 
-	opts.imagename = 0;
+		/* default image name */
+		opts.imagename = 0;
+
+		/* default color set */
+		opts.color_count = 0;
+		opts.colors = 0;
+	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:t:i:")) != -1) {
+	while((c = getopt(argc, argv, "b:t:i:c:")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
+				break;
+			case 'c':
+				parseColors(optarg, disp);
 				break;
 			case 'i':
 				opts.imagename = optarg;
@@ -635,10 +707,23 @@ int main(const int argc, char ** argv){
 				opts.blur_size = atoi(optarg);
 				break;
 			case '?':
-				if (optopt == 'b') {
-					fprintf(stderr, "-b --blur [int]: missing [int]");
-				} else if(optopt == 'i'){
-					opts.imagename = "";
+				switch(optopt) {
+					case 'b':
+						fprintf(stderr, "-b --blur [int]: missing [int]\n");
+						exit(1);
+						break;
+					case 'c':
+						fprintf(stderr, "-c --colorset \"#xxxxxx ...\": missing \"#xxxxxx ...\"\n");
+						exit(1);
+						break;
+					case 'i':
+						fprintf(stderr, "-i --image [path]: missing [path]\n");
+						opts.imagename = "";
+						break;
+					case 't':
+						fprintf(stderr, "-t --threads [int]: missing [int]\n");
+						exit(1);
+						break;
 				}
 				break;
 		}
@@ -655,7 +740,6 @@ int main(const int argc, char ** argv){
 
 	memset(locks, 0, nscreens * sizeof(lock_t));
 
-	disp = XOpenDisplay(0);
 	if(!disp){
 		printf("No display\n");
 		exit(1);
