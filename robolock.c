@@ -501,16 +501,39 @@ int getimage(Display *disp, lock_t *lock){
 
 	lock->scrdata = malloc(lock->depth * width * height);
 	unsigned char *outdata = lock->scrdata;
+
+	int ofsy = (y-height)/2;
+	int ofsx = (x-width)/2;
 	if(imagedata && n){
-		int ix, iy;
-		for(iy = 0; iy<y && iy < height; iy++){
-			for(ix = 0; ix<x && ix < width; ix++){
-				int in;
-				for(in = 0; in < n && in < 4; in++){
-					outdata[(iy * width + ix) * 4 + in] = imagedata[(iy * x + ix) * n + in];
-				}
+		int ix, iy,in;
+
+
+		//fill in pre-y with black
+		for(iy = 0; iy < height && (iy + ofsy) < 0; iy++){
+			for(ix = 0; ix < width; ix++){
+				for(in = 0; in < n && in < 4; in++) outdata[(iy * width +ix) * 4 + in] = 0;
 			}
 		}
+		for(; (iy+ofsy)<y && iy < height; iy++){
+			//fill in pre-x with black
+			for(ix = 0;ix < width && (ix + ofsx) < 0; ix++){
+				for(in = 0; in < n && in < 4; in++) outdata[(iy * width + ix) * 4 + in] = 0;
+			}
+			for(; (ix+ofsx)<x && ix < width; ix++){
+				for(in = 0; in < n && in < 4; in++) outdata[(iy * width + ix) * 4 + in] = imagedata[((iy+ofsy) * x + (ix+ofsx)) * n + in];
+			}
+			//fill in post-x with black
+			for(;ix < width; ix++){
+				for(in = 0; in < n && in < 4; in++) outdata[(iy * width + ix) * 4 + in] = 0;
+			}
+		}
+		//fill in post-y with black
+		for(; iy < height; iy++){
+			for(ix = 0; ix < width; ix++){
+				for(in = 0; in < n && in < 4; in++) outdata[(iy * width +ix) * 4 + in] = 0;
+			}
+		}
+
 		stbi_image_free(imagedata);
 	} else memset(outdata, 120, 4*width*height);
 
