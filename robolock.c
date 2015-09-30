@@ -591,13 +591,17 @@ int lockscreen(Display *disp, lock_t *lock){
 int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
-	/* default blur size */
-	opts.blur_size = 25;
+	
+    {
+        /* default blur size */
+	    opts.blur_size = 25;
 
         /* default thread count */
         opts.threads = 8;
 
-	opts.imagename = 0;
+        /* default image name */
+	    opts.imagename = 0;
+    }
 
 	int c;
 	while((c = getopt(argc, argv, "b:t:i:")) != -1) {
@@ -612,10 +616,18 @@ int main(const int argc, char ** argv){
 				opts.blur_size = atoi(optarg);
 				break;
 			case '?':
-				if (optopt == 'b') {
-					fprintf(stderr, "-b --blur [int]: missing [int]");
-				}
-				break;
+				switch(optopt) {
+                    case 'b':
+					    fprintf(stderr, "-b --blur [int]: missing [int]");
+				        break;
+                    case 'i':
+                        fprintf(stderr, "-i --image [path]: missing [path]");
+                        break;
+                    case 't':
+                        fprintf(stderr, "-t --threads [int]: missing [int]");
+                        break;
+                }
+                break;
 		}
 	}
 	if(!getpwuid(getuid())){
