@@ -614,6 +614,8 @@ int main(const int argc, char ** argv){
 			case '?':
 				if (optopt == 'b') {
 					fprintf(stderr, "-b --blur [int]: missing [int]");
+				} else if(optopt == 'i'){
+					opts.imagename = "";
 				}
 				break;
 		}
