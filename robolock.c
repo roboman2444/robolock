@@ -147,8 +147,6 @@ void postprocessx(ppargs_t * args){
 
 	float blursquare = (float)(blursize * blursize);
 
-	printf("mythread %i, numthreads %i, blursize %i\n", mythread, numthreads, blursize);
-
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -299,7 +297,6 @@ void postprocesscolor(ppargs_t *args){
 			if(fg > 255) fg = 255;
 			if(fr > 255) fr = 255;
 			unsigned int result = fb | fg << 8 | fr<<16;
-//			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
 			*((unsigned int *)xoutput) = result;
 		}
 	}
@@ -343,7 +340,6 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 	XPutImage(disp, lock->pmap, lock->gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 	XClearWindow(disp, lock->win);
 	free(mythreads);
-//	free(data);
 	lastr = red;
 	lastg = green;
 	lastb = blue;
@@ -491,7 +487,6 @@ int getimage(Display *disp, lock_t *lock){
 	int width = lock->width;
 	int height = lock->height;
 
-	//cheating
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
 	lock->depth = lock->screenshot->depth / 8;
 	if(lock->depth == 3) lock->depth =4;
@@ -516,10 +511,6 @@ int getimage(Display *disp, lock_t *lock){
 
 	memcpy(lock->screenshot->data, lock->scrdata, 4 * width * height);
 
-//	lock->screenshot = XCreateImage(disp, CopyFromParent, 32, ZPixmap, 0, (char *)outdata, width, height, 32, 0);
-//	lock->depth = 4;
-//	free(outdata);
-//	printf("here\n");
 	return TRUE;
 }
 
@@ -618,13 +609,16 @@ int main(const int argc, char ** argv){
 			case '?':
 				switch(optopt) {
                     case 'b':
-					    fprintf(stderr, "-b --blur [int]: missing [int]");
-				        break;
+					    fprintf(stderr, "-b --blur [int]: missing [int]\n");
+				        exit(1);
+                        break;
                     case 'i':
-                        fprintf(stderr, "-i --image [path]: missing [path]");
+					    fprintf(stderr, "-i --image [path]: missing [path]\n");
+                        opts.imagename = "";
                         break;
                     case 't':
-                        fprintf(stderr, "-t --threads [int]: missing [int]");
+                        fprintf(stderr, "-t --threads [int]: missing [int]\n");
+                        exit(1);
                         break;
                 }
                 break;
