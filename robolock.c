@@ -308,9 +308,17 @@ void postprocesscolor(ppargs_t *args){
 
 
 
+float lastr = 0.0;
+float lastg = 0.0;
+float lastb = 0.0;
+
+
+
 int updateColor(Display *disp, lock_t *lock, float red, float green, float blue){
 
 	if(opts.threads < 1) return FALSE;
+
+	if(lastr == red && lastg == green && lastb == blue) return 2;
 
 	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
@@ -335,6 +343,10 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue)
 	XClearWindow(disp, lock->win);
 	free(mythreads);
 //	free(data);
+	lastr = red;
+	lastg = green;
+	lastb = blue;
+
 	return TRUE;
 }
 
@@ -394,6 +406,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 	running = TRUE;
 
 	int bscolorthing = 0;
+
 
 
 	while(running && !XNextEvent(disp, &ev)){
