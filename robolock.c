@@ -519,7 +519,7 @@ int getimage(Display *disp, lock_t *lock){
 //	lock->screenshot = XCreateImage(disp, CopyFromParent, 32, ZPixmap, 0, (char *)outdata, width, height, 32, 0);
 //	lock->depth = 4;
 //	free(outdata);
-	printf("here\n");
+//	printf("here\n");
 	return TRUE;
 }
 
