@@ -622,7 +622,7 @@ int doMakeColor(XColor *at, char *str, Display *disp) {
 			AllocNone);
 	wa.border_pixel = 0;
 	wa.background_pixel = 0;
-	
+
 	if(!XAllocNamedColor(disp, wa.colormap, str, at, at)) {
 		return 0;
 	}
@@ -675,7 +675,6 @@ int main(const int argc, char ** argv){
 	const char *pws = 0;
 	Display * disp;
 	disp = XOpenDisplay(0);
-	
 	{
 		/* default blur size */
 		opts.blur_size = 25;
