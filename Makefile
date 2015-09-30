@@ -14,6 +14,9 @@ robolock: $(OBJECTS)
 debug:	CFLAGS= -Wall -O0 -g  -fstrict-aliasing -march=native
 debug: 	$(OBJECTS)
 	$(CC) $(CFLAGS) $(OBJECTS) -o robolock-$@ $(LDFLAGS)
+	@chmod 755 robolock-$@
+	@chmod u+s robolock-$@
+
 
 clean:
 	@echo cleaning oop

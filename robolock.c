@@ -30,8 +30,10 @@ typedef struct lock_s {
 	int screen;
 	Window root, win;
 	Pixmap pmap;
+	GC gc;
 	XImage * screenshot;
-	char *scrdata;
+	unsigned char *scrdata;
+	unsigned int depth;
 	unsigned int width;
 	unsigned int height;
 } lock_t;
@@ -101,59 +103,11 @@ char * getpw(void){
 
 }
 
-void readpw(Display *disp, const char *pws){
-	char buf[32], passwd[256];
-	int num, screen;
-	unsigned int len;
-	KeySym ksym;
-	XEvent ev;
-	len = 0;
-	running = TRUE;
-
-
-	while(running && !XNextEvent(disp, &ev)){
-		if(ev.type == KeyPress){
-			buf[0] = 0;
-			num = XLookupString(&ev.xkey, buf, sizeof(buf), &ksym, 0);
-			if(IsKeypadKey(ksym)){
-				if(ksym == XK_KP_Enter) ksym = XK_Return;
-				else if (ksym >= XK_KP_0 && ksym <= XK_KP_9) ksym = (ksym - XK_KP_0) + XK_0;
-			}
-			if(IsFunctionKey(ksym) || IsKeypadKey(ksym) || IsMiscFunctionKey(ksym) || IsPFKey(ksym) || IsPrivateKeypadKey(ksym)) continue;
-			switch(ksym){
-			case XK_Return:
-				passwd[len] = 0;
-
-				running = !!strcmp(crypt(passwd, pws), pws);
-				if(running){
-					XBell(disp, 100);
-					failure = TRUE;
-				}
-				len = 0;
-			break;
-			case XK_Escape:
-				len = 0;
-			break;
-			case XK_BackSpace:
-				if(len) len--;
-			break;
-			default:
-				if(num && !iscntrl((int) buf[0]) && (len + num < sizeof(passwd))){
-					memcpy(passwd + len, buf, num);
-					len+= num;
-				}
-			break;
-			}
-		}
-		else for(screen = 0; screen < nscreens; screen++) XRaiseWindow(disp, locks[screen].win);
-	}
-}
-
-
 
 int unlockscreen(Display * disp, lock_t * lock){
 	if(!disp || !lock) return FALSE;
 	XUngrabPointer(disp, CurrentTime);
+	if(lock->scrdata) free(lock->scrdata);
 	if(lock->pmap)XFreePixmap(disp, lock->pmap);
 	if(lock->screenshot)XDestroyImage(lock->screenshot);
 	XDestroyWindow(disp, lock->win);
@@ -172,6 +126,7 @@ typedef struct ppargs_s {
 	unsigned int width;
 	unsigned int height;
 	unsigned int depth;
+	float r, g, b;
 	pthread_t t;
 } ppargs_t;
 
@@ -246,26 +201,16 @@ void postprocessy(ppargs_t * args){
 	int blursize = args->blursize;
 
 	float blursquare = (float)(blursize * blursize);
-	int halfheight= height/2;
-	int halfwidth = width/2;
-	float halfheightsq = (float)(halfheight * halfheight);
-	float halfwidthsq = (float)(halfwidth * halfwidth);
 
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
-		unsigned char * ydata = &input[(myy * width) * depth];
-		int ydistcenter = abs(halfheight - myy);
-		float ydistsq = (float)(ydistcenter * ydistcenter);
+		unsigned char * ydata = &data[(myy * width) * depth];
 		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
 
 			int myx = x+xint;
-
-			int xdistcenter = abs(halfwidth - myx);
-			float xdistsq = (float)(xdistcenter * xdistcenter);
-			float distw = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq);
 
 			unsigned char * xdata = &ydata[myx * depth];
 			int result = 0;
@@ -275,7 +220,7 @@ void postprocessy(ppargs_t * args){
 			int yoff;
 			float tweight = 0;
 			for(yoff = -blursize; yoff < blursize; yoff++){
-				unsigned char * yoffinput = &data[((yoff + myy) % height) * width * depth];
+				unsigned char * yoffinput = &input[((yoff + myy) % height) * width * depth];
 				unsigned int readin = ((unsigned int *)yoffinput)[myx];
 				int abszoff = abs(yoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
@@ -288,7 +233,7 @@ void postprocessy(ppargs_t * args){
 			float fg = (float)g/tweight;
 			float fb = (float)b/tweight;
 
-			result = (int)(fr*distw) | (int)(fg*distw) << 8 | (int)(fb*distw)<<16;
+			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
 			*((unsigned int *)xdata) = result;
 		}
 	}
@@ -296,6 +241,102 @@ void postprocessy(ppargs_t * args){
 	}
 }
 
+void postprocesscolor(ppargs_t *args){
+	unsigned int numthreads = args->numthreads;
+	unsigned int mythread = args->mythread;
+	unsigned int width = args->width;
+	unsigned int height = args->height;
+	unsigned int depth = args->depth;
+
+	float red = args->r;
+	float green = args->g;
+	float blue = args->b;
+
+	unsigned char * data = args->d1;
+	unsigned char * input = args->d2;
+
+
+	int halfheight= height/2;
+	int halfwidth = width/2;
+	float halfheightsq = (float)(halfheight * halfheight);
+	float halfwidthsq = (float)(halfwidth * halfwidth);
+
+	unsigned int x, y, yint, xint;
+	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
+	for(x = 0; x < width; x += TILEX){
+	for(yint = 0; yint < TILEY && y + yint < height; yint++){
+		int myy = y+yint;
+		unsigned char * yinput = &input[(myy * width) * depth];
+		unsigned char * youtput = &data[(myy * width) * depth];
+		int ydistcenter = abs(halfheight - myy);
+		float ydistsq = (float)(ydistcenter * ydistcenter);
+		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
+
+			int myx = x+xint;
+
+			int xdistcenter = abs(halfwidth - myx);
+			float xdistsq = (float)(xdistcenter * xdistcenter);
+			float distr = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * red;
+			float distg = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * green;
+			float distb = 1.0 - (ydistsq + xdistsq)/(halfheightsq + halfwidthsq) * blue;
+			if(distr < 0.0) distr = 0.0;
+			if(distg < 0.0) distg = 0.0;
+			if(distb < 0.0) distb = 0.0;
+
+
+			unsigned char * xinput = &yinput[myx * depth];
+			unsigned char * xoutput = &youtput[myx * depth];
+			unsigned int readin = *((unsigned int *)xinput);
+			float b = (readin & 0xFF);
+			float g = ((readin >> 8) & 0xFF);
+			float r = ((readin >> 16) & 0xFF);
+
+			unsigned int fb = (int)(b*distb);
+			unsigned int fg = (int)(g*distg);
+			unsigned int fr = (int)(r*distr);
+			if(fb > 255) fb = 255;
+			if(fg > 255) fg = 255;
+			if(fr > 255) fr = 255;
+			unsigned int result = fb | fg << 8 | fr<<16;
+//			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
+			*((unsigned int *)xoutput) = result;
+		}
+	}
+	}
+	}
+}
+
+
+
+int updateColor(Display *disp, lock_t *lock, float red, float green, float blue){
+
+	if(opts.threads < 1) return FALSE;
+
+	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
+	int i;
+	for(i = 0; i < opts.threads; i++){
+		mythreads[i].d1 = (unsigned char *)lock->screenshot->data;
+		mythreads[i].d2 = lock->scrdata;
+		mythreads[i].blursize = opts.blur_size;
+		mythreads[i].numthreads = opts.threads;
+		mythreads[i].mythread = i;
+		mythreads[i].width = lock->width;
+		mythreads[i].height = lock->height;
+		mythreads[i].depth = lock->depth;
+		mythreads[i].r = red;
+		mythreads[i].g = green;
+		mythreads[i].b = blue;
+		pthread_create(&mythreads[i].t, NULL, (void * )postprocesscolor, (void *)&mythreads[i]);
+	}
+	for(i = 0; i < opts.threads; i++){
+		pthread_join(mythreads[i].t, NULL);
+	}
+	XPutImage(disp, lock->pmap, lock->gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
+	XClearWindow(disp, lock->win);
+	free(mythreads);
+//	free(data);
+	return TRUE;
+}
 
 int getscreenshot(Display * disp, lock_t *lock){
 
@@ -304,12 +345,13 @@ int getscreenshot(Display * disp, lock_t *lock){
 	unsigned int width = lock->width;
 	unsigned int height = lock->height;
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
-	int depth = lock->screenshot->depth / 8;
-	if(depth == 3) depth =4;
-	unsigned char * data = malloc (width * height * depth);
+	lock->depth = lock->screenshot->depth / 8;
+	if(lock->depth == 3) lock->depth =4;
+	unsigned char * data = malloc (width * height * lock->depth);
+	lock->scrdata = malloc (width * height * lock->depth);
 	unsigned char * input = (unsigned char *) lock->screenshot->data;
 
-	memcpy(data, input, width * height * depth);
+	memcpy(data, input, width * height * lock->depth);
 
 	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
@@ -321,13 +363,15 @@ int getscreenshot(Display * disp, lock_t *lock){
 		mythreads[i].mythread = i;
 		mythreads[i].width = width;
 		mythreads[i].height = height;
-		mythreads[i].depth = depth;
+		mythreads[i].depth = lock->depth;
 		pthread_create(&mythreads[i].t, NULL, (void * )postprocessx, (void *)&mythreads[i]);
 	}
 	for(i = 0; i < opts.threads; i++){
 		pthread_join(mythreads[i].t, NULL);
 	}
 	for(i = 0; i < opts.threads; i++){
+		mythreads[i].d1 = lock->scrdata;
+		mythreads[i].d2 = data;
 		pthread_create(&mythreads[i].t, NULL, (void *) postprocessy, (void *)&mythreads[i]);
 	}
 	for(i = 0; i < opts.threads; i++){
@@ -340,9 +384,91 @@ int getscreenshot(Display * disp, lock_t *lock){
 	return TRUE;
 }
 
+void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks){
+	char buf[32], passwd[256];
+	int num, screen;
+	unsigned int len;
+	KeySym ksym;
+	XEvent ev;
+	len = 0;
+	running = TRUE;
+
+	int bscolorthing = 0;
+
+
+	while(running && !XNextEvent(disp, &ev)){
+		if(ev.type == KeyPress){
+			buf[0] = 0;
+			num = XLookupString(&ev.xkey, buf, sizeof(buf), &ksym, 0);
+			if(IsKeypadKey(ksym)){
+				if(ksym == XK_KP_Enter) ksym = XK_Return;
+				else if (ksym >= XK_KP_0 && ksym <= XK_KP_9) ksym = (ksym - XK_KP_0) + XK_0;
+			}
+			if(IsFunctionKey(ksym) || IsKeypadKey(ksym) || IsMiscFunctionKey(ksym) || IsPFKey(ksym) || IsPrivateKeypadKey(ksym)) continue;
+			switch(ksym){
+			case XK_Return:
+				passwd[len] = 0;
+
+				running = !!strcmp(crypt(passwd, pws), pws);
+				if(running){
+					unsigned int i;
+					for(i= 0; i <numlocks; i++){
+						updateColor(disp, &locks[i], 0.0, 2.0, 2.0);
+					}
+					XBell(disp, 100);
+					failure = TRUE;
+				}
+				len = 0;
+			break;
+			case XK_Escape:
+				len = 0;
+				unsigned int i;
+				for(i= 0; i <numlocks; i++){
+					updateColor(disp, &locks[i], 1.0, 1.0, 1.0);
+				}
+			break;
+			case XK_BackSpace:
+				if(len){
+					len--;
+					unsigned int i;
+					if(len){
+						for(i= 0; i <numlocks; i++){
+							if(bscolorthing)updateColor(disp, &locks[i], -2.0, -2.0, -2.0);
+							else updateColor(disp, &locks[i], 2.0, 2.0, 2.0);
+						}
+						bscolorthing = !bscolorthing;
+					} else {
+						for(i= 0; i <numlocks; i++){
+							updateColor(disp, &locks[i], 1.0, 1.0, 1.0);
+						}
+					}
+				}
+			break;
+			default:
+				if(num && !iscntrl((int) buf[0]) && (len + num < sizeof(passwd))){
+					memcpy(passwd + len, buf, num);
+					len+= num;
+					unsigned int i;
+					for(i= 0; i <numlocks; i++){
+						updateColor(disp, &locks[i],
+							((float)rand()*2.0)/(float)RAND_MAX,
+							((float)rand()*2.0)/(float)RAND_MAX,
+							((float)rand()*2.0)/(float)RAND_MAX);
+					}
+
+				}
+			break;
+			}
+		}
+		else for(screen = 0; screen < nscreens; screen++) XRaiseWindow(disp, locks[screen].win);
+	}
+}
+
+
+
+
 int lockscreen(Display *disp, lock_t *lock){
 	if(!disp || !lock) return FALSE;
-	GC gc;
 	Cursor invisible;
 	char curs[] = {0,0,0,0,0,0,0,0};
 	XColor color = {0};
@@ -352,10 +478,10 @@ int lockscreen(Display *disp, lock_t *lock){
 	lock->width = DisplayWidth(disp, lock->screen);
 	lock->height = DisplayHeight(disp, lock->screen);
 
-	gc = XCreateGC(disp, lock->root, 0, 0);
+	lock->gc = XCreateGC(disp, lock->root, 0, 0);
 	getscreenshot(disp, lock);
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
-	XPutImage(disp, lock->pmap, gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
+	XPutImage(disp, lock->pmap, lock->gc, lock->screenshot, 0, 0, 0, 0, lock->width, lock->height);
 
 	wa.override_redirect = 1;
 	wa.background_pixel = 0;
@@ -372,6 +498,8 @@ int lockscreen(Display *disp, lock_t *lock){
 	XMapRaised(disp, lock->win);
 	if(cpmap)XFreePixmap(disp, cpmap);
 	cpmap = 0;
+
+	updateColor(disp, lock, 1.0, 1.0, 1.0);
 
 
 	int i = 1000;
@@ -452,7 +580,7 @@ int main(const int argc, char ** argv){
 		return 1;
 	}
 	printf("locked!\n");
-	readpw(disp, pws);
+	readpw(disp, pws, locks, nscreens);
 	for(i = 0; i <nscreens; i++){
 		unlockscreen(disp, &locks[i]);
 	}
