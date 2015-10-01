@@ -431,18 +431,19 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 			switch(ksym){
 			case XK_Return:
 				passwd[len] = 0;
-
-				running = !!strcmp(crypt(passwd, pws), pws);
-				if(running){
-					unsigned int i;
-					for(i= 0; i <numlocks; i++){
-						updateColor(disp, &locks[i], -2.0, 0.0, 0.0, 0.0);
+				if(len){
+					running = !!strcmp(crypt(passwd, pws), pws);
+					if(running){
+						unsigned int i;
+						for(i= 0; i <numlocks; i++){
+							updateColor(disp, &locks[i], -2.0, 0.0, 0.0, 0.0);
+						}
+						XBell(disp, 100);
+						failure = TRUE;
 					}
-					XBell(disp, 100);
-					failure = TRUE;
+					len = 0;
+					break;
 				}
-				len = 0;
-			break;
 			case XK_Escape:
 				len = 0;
 				unsigned int i;
