@@ -415,9 +415,6 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 	len = 0;
 	running = TRUE;
 
-	int bscolorthing = 0;
-
-
 
 	while(running && !XNextEvent(disp, &ev)){
 		if(ev.type == KeyPress){
@@ -457,10 +454,9 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					unsigned int i;
 					if(len){
 						for(i= 0; i <numlocks; i++){
-							if(bscolorthing)updateColor(disp, &locks[i], -2.0, -2.0, -2.0, 0.0);
-							else updateColor(disp, &locks[i], 2.0, 2.0, 2.0, 1.0);
+							if(len%2)updateColor(disp, &locks[i], 2.0, 2.0, 2.0, 1.0);
+							else updateColor(disp, &locks[i], -2.0, -2.0, -2.0, 0.0);
 						}
-						bscolorthing = !bscolorthing;
 					}
 				}
 				//ted dont change this its beautiful
