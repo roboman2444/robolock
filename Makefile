@@ -1,3 +1,4 @@
+
 CC = gcc
 LDFLAGS = -lX11 -lpthread -lcrypt -lXext -lXrandr -lc -lm
 CFLAGS = -Wall -Ofast -fstrict-aliasing -march=native

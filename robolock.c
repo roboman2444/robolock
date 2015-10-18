@@ -44,6 +44,7 @@ typedef struct options_s {
 	char *imagename;
 	XColor *colors;
 	unsigned int color_count;
+	char stealth;
 } options_t;
 
 int running = TRUE;
@@ -360,6 +361,15 @@ int pickRandomColor(Display *disp, lock_t *lock, XColor *colors, int color_count
 }
 
 
+int getstealth(Display *disp, lock_t *lock){
+	unsigned int width = lock->width;
+	unsigned int height = lock->height;
+	lock->screenshot = XGetImage(disp, lock->root, 0, 0, width, height, AllPlanes, ZPixmap);
+	lock->depth = lock->screenshot->depth / 8;
+	if(lock->depth == 3) lock->depth = 4;
+	return TRUE;
+}
+
 int getscreenshot(Display * disp, lock_t *lock){
 
 	if(opts.threads < 1) return FALSE;
@@ -432,7 +442,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					running = !!strcmp(crypt(passwd, pws), pws);
 					if(running){
 						unsigned int i;
-						for(i= 0; i <numlocks; i++){
+						for(i= 0; i <numlocks && !opts.stealth; i++){
 							updateColor(disp, &locks[i], -2.0, 0.0, 0.0, 0.0);
 						}
 						XBell(disp, 100);
@@ -444,7 +454,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 			case XK_Escape:
 				len = 0;
 				unsigned int i;
-				for(i= 0; i <numlocks; i++){
+				for(i= 0; i <numlocks && !opts.stealth; i++){
 					updateColor(disp, &locks[i], 1.0, 1.0, 1.0, 1.0);
 				}
 			break;
@@ -453,14 +463,14 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					len--;
 					unsigned int i;
 					if(len){
-						for(i= 0; i <numlocks; i++){
+						for(i= 0; i <numlocks && !opts.stealth; i++){
 							if(len%2)updateColor(disp, &locks[i], 2.0, 2.0, 2.0, 1.0);
 							else updateColor(disp, &locks[i], -2.0, -2.0, -2.0, 0.0);
 						}
 					}
 				}
 				//ted dont change this its beautiful
-				for(i= 0; i <numlocks && !len; i++)updateColor(disp, &locks[i], 1.0, 1.0, 1.0, 1.0);
+				for(i= 0; i <numlocks && !len && !opts.stealth; i++)updateColor(disp, &locks[i], 1.0, 1.0, 1.0, 1.0);
 
 			break;
 			default:
@@ -468,7 +478,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 					memcpy(passwd + len, buf, num);
 					len+= num;
 					unsigned int i;
-					for(i= 0; i <numlocks; i++){
+					for(i= 0; i <numlocks && !opts.stealth; i++){
 						if (opts.colors) {
 							pickRandomColor(disp, &locks[i], opts.colors, opts.color_count);
 						} else {
@@ -565,10 +575,14 @@ int lockscreen(Display *disp, lock_t *lock){
 
 	lock->gc = XCreateGC(disp, lock->root, 0, 0);
 
-	if(opts.imagename){
-		getimage(disp, lock);
+	if(opts.stealth){
+		getstealth(disp, lock);
 	} else {
-		getscreenshot(disp, lock);
+		if(opts.imagename){
+			getimage(disp, lock);
+		} else {
+			getscreenshot(disp, lock);
+		}
 	}
 
 	lock->pmap = XCreatePixmap(disp, lock->root, lock->width, lock->height, lock->screenshot->depth);
@@ -584,18 +598,21 @@ int lockscreen(Display *disp, lock_t *lock){
 
 	Pixmap cpmap = XCreateBitmapFromData(disp, lock->win, curs, 8, 8);
 	invisible = XCreatePixmapCursor(disp, cpmap, cpmap, &color, &color, 0, 0);
-	XDefineCursor(disp, lock->win, invisible);
+	if(!opts.stealth) XDefineCursor(disp, lock->win, invisible);
 
 	XMapRaised(disp, lock->win);
 	if(cpmap)XFreePixmap(disp, cpmap);
 	cpmap = 0;
 
-	updateColor(disp, lock, 1.0, 1.0, 1.0, 1.0);
+	if(!opts.stealth)updateColor(disp, lock, 1.0, 1.0, 1.0, 1.0);
 
 
 	int i = 1000;
 	for(i = 1000; i; i--){
-		if(XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+		if(opts.stealth && XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+			GrabModeAsync, GrabModeAsync, None, None, CurrentTime) == GrabSuccess) break;
+
+		else if(XGrabPointer(disp, lock->root, False, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
 			GrabModeAsync, GrabModeAsync, None, invisible, CurrentTime) == GrabSuccess) break;
 		usleep(1000);
 	}
@@ -692,7 +709,7 @@ int main(const int argc, char ** argv){
 	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:t:i:c:")) != -1) {
+	while((c = getopt(argc, argv, "b:t:i:c:s")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
@@ -705,6 +722,9 @@ int main(const int argc, char ** argv){
 				break;
 			case 'b':
 				opts.blur_size = atoi(optarg);
+				break;
+			case 's':
+				opts.stealth = TRUE;
 				break;
 			case '?':
 				switch(optopt) {
@@ -752,7 +772,6 @@ int main(const int argc, char ** argv){
 	XSync(disp, FALSE);
 	if(!nlocks){
 		printf("no lock!\n");
-
 		free(locks);
 		XCloseDisplay(disp);
 		return 1;
