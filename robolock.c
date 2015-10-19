@@ -45,6 +45,7 @@ typedef struct options_s {
 	XColor *colors;
 	unsigned int color_count;
 	char stealth;
+	char alertpress;
 	char * command;
 } options_t;
 
@@ -502,6 +503,25 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 				}
 			break;
 			}
+		} else if(ev.type == ButtonPress){
+			if(opts.alertpress == 1){
+				if(opts.command)runcmd(opts.command);
+			} else if(opts.alertpress == 2){
+				passwd[len] = 0;
+				if(len){
+					running = !!strcmp(crypt(passwd, pws), pws);
+					if(running){
+						unsigned int i;
+						for(i= 0; i <numlocks && !opts.stealth; i++){
+							updateColor(disp, &locks[i], -2.0, 0.0, 0.0, 0.0);
+						}
+						XBell(disp, 100);
+						failure = TRUE;
+						if(opts.command)runcmd(opts.command);
+					}
+					len = 0;
+				}
+			}
 		}
 		else for(screen = 0; screen < nscreens; screen++) XRaiseWindow(disp, locks[screen].win);
 	}
@@ -720,7 +740,7 @@ int main(const int argc, char ** argv){
 	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:t:i:c:a:s")) != -1) {
+	while((c = getopt(argc, argv, "b:t:i:c:a:spP")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
@@ -739,6 +759,12 @@ int main(const int argc, char ** argv){
 				break;
 			case 'a':
 				opts.command = optarg;
+				break;
+			case 'p':
+				if(!opts.alertpress) opts.alertpress = 1;
+				break;
+			case 'P':
+				opts.alertpress = 2;
 				break;
 			case '?':
 				switch(optopt) {

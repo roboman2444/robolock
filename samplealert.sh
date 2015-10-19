@@ -7,5 +7,6 @@ LOGFILE="$LOGDIR/alert-$LOGDATE.txt"
 IMAGEFILE="$LOGDIR/alert-$LOGDATE.jpeg"
 echo printing to log $LOGFILE
 date > $LOGFILE
-
 streamer -o $IMAGEFILE
+echo
+echo done
