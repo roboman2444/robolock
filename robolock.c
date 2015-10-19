@@ -24,7 +24,10 @@
 #define TRUE 1
 #define FALSE 0
 
-
+typedef struct loglist {
+	struct loglist *next;
+	char *loginfo;
+} loglist;
 
 typedef struct lock_s {
 	int screen;
@@ -46,7 +49,9 @@ typedef struct options_s {
 	unsigned int color_count;
 	char stealth;
 	char alertpress;
-	char * command;
+	char *command;
+	char print_logs_on_pwcorrect;
+	unsigned int total_logs;
 } options_t;
 
 int running = TRUE;
@@ -55,6 +60,8 @@ int failure = FALSE;
 
 lock_t *locks;
 int nscreens = 0;
+loglist *logs = NULL;
+unsigned int log_count = 0;
 
 options_t opts = {0};
 
@@ -75,16 +82,58 @@ int outofmemnokill(void){
 	return TRUE;
 }
 
+void append_log(char *logstr) {
+	if (log_count == opts.total_logs) {
+		if (logs) {
+			free(logs->loginfo);
+			logs->loginfo = strdup("logs truncated");
+		}
+	}
+	if (log_count < opts.total_logs) {
+		loglist *newlog = calloc(sizeof(loglist), 1);
+		newlog->next = logs;
+		newlog->loginfo = strdup(logstr);
+		logs = newlog;
+	}
+	log_count++;
+}
 
-
-
-void runcmd(char * command){
-	if(fork()){
-		exit(system(command));
+void print_logs() {
+	loglist *tmp = logs;
+	while(tmp) {
+		if (tmp->loginfo) { // this should always be true, but just to be safe
+			puts(tmp->loginfo);
+		}
+		tmp = tmp->next; // yeah, fuck it a linked list was fast to implement
 	}
 }
 
-char * getpw(void){
+void free_logs() {
+	loglist *tmp = logs;
+	if (tmp) {
+		logs = tmp->next;
+		if (tmp->loginfo) {
+			free(tmp->loginfo); // always strdup'd in
+		}
+		free(tmp);
+		free_logs(); // wheeeeeeee
+	}
+}
+
+void runcmd(char *command){
+	if (command) {
+		FILE *forkd = popen(command, "r");
+		if (forkd) {
+			char line[128] = {0}; // fuck you and your long lines
+			if (fgets(line, 128, forkd)) {
+				append_log(line); // dont worry, it is memcpyd
+			}
+			fclose(forkd);
+		}
+	}
+}
+
+char *getpw(void){
 	char *rval;
 	struct passwd *pw;
 	errno = 0;
@@ -119,7 +168,7 @@ char * getpw(void){
 }
 
 
-int unlockscreen(Display * disp, lock_t * lock){
+int unlockscreen(Display *disp, lock_t *lock){
 	if(!disp || !lock) return FALSE;
 	XUngrabPointer(disp, CurrentTime);
 	if(lock->scrdata) free(lock->scrdata);
@@ -133,8 +182,8 @@ int unlockscreen(Display * disp, lock_t * lock){
 
 
 typedef struct ppargs_s {
-	unsigned char * d1;
-	unsigned char * d2;
+	unsigned char *d1;
+	unsigned char *d2;
 	int blursize;
 	unsigned int numthreads;
 	unsigned int mythread;
@@ -148,15 +197,15 @@ typedef struct ppargs_s {
 #define TILEX 8
 #define TILEY 16
 
-void postprocessx(ppargs_t * args){
+void postprocessx(ppargs_t *args){
 
 	unsigned int numthreads = args->numthreads;
 	unsigned int mythread = args->mythread;
 	unsigned int width = args->width;
 	unsigned int height = args->height;
 	unsigned int depth = args->depth;
-	unsigned char * data = args->d1;
-	unsigned char * input = args->d2;
+	unsigned char *data = args->d1;
+	unsigned char *input = args->d2;
 	int blursize = args->blursize;
 
 	float blursquare = (float)(blursize * blursize);
@@ -166,13 +215,13 @@ void postprocessx(ppargs_t * args){
 	for(x = 0; x < width; x += TILEX){
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
-		unsigned char * ydata = &data[(myy * width) * depth];
-		unsigned char * yoffinput = &input[myy  * width * depth];
+		unsigned char *ydata = &data[(myy * width) * depth];
+		unsigned char *yoffinput = &input[myy  * width * depth];
 		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
 
 			int myx = x+xint;
 
-			unsigned char * xdata = &ydata[myx * depth];
+			unsigned char *xdata = &ydata[myx * depth];
 			int result = 0;
 			float r = 0;
 			float g = 0;
@@ -201,7 +250,7 @@ void postprocessx(ppargs_t * args){
 	}
 }
 
-void postprocessy(ppargs_t * args){
+void postprocessy(ppargs_t *args){
 
 	unsigned int numthreads = args->numthreads;
 	unsigned int mythread = args->mythread;
@@ -209,23 +258,23 @@ void postprocessy(ppargs_t * args){
 	unsigned int height = args->height;
 	unsigned int depth = args->depth;
 
-	unsigned char * data = args->d1;
-	unsigned char * input = args->d2;
+	unsigned char *data = args->d1;
+	unsigned char *input = args->d2;
 	int blursize = args->blursize;
 
-	float blursquare = (float)(blursize * blursize);
+	float blursquare = (float)(blursize *blursize);
 
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
-		unsigned char * ydata = &data[(myy * width) * depth];
+		unsigned char *ydata = &data[(myy * width) * depth];
 		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
 
 			int myx = x+xint;
 
-			unsigned char * xdata = &ydata[myx * depth];
+			unsigned char *xdata = &ydata[myx * depth];
 			int result = 0;
 			float r = 0;
 			float g = 0;
@@ -233,7 +282,7 @@ void postprocessy(ppargs_t * args){
 			int yoff;
 			float tweight = 0;
 			for(yoff = -blursize; yoff < blursize; yoff++){
-				unsigned char * yoffinput = &input[((yoff + myy) % height) * width * depth];
+				unsigned char *yoffinput = &input[((yoff + myy) % height) * width * depth];
 				unsigned int readin = ((unsigned int *)yoffinput)[myx];
 				int abszoff = abs(yoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
@@ -265,8 +314,8 @@ void postprocesscolor(ppargs_t *args){
 	float green = args->g;
 	float blue = args->b;
 
-	unsigned char * data = args->d1;
-	unsigned char * input = args->d2;
+	unsigned char *data = args->d1;
+	unsigned char *input = args->d2;
 
 
 	int halfheight= height/2;
@@ -281,8 +330,8 @@ void postprocesscolor(ppargs_t *args){
 	for(x = 0; x < width; x += TILEX){
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
-		unsigned char * yinput = &input[(myy * width) * depth];
-		unsigned char * youtput = &data[(myy * width) * depth];
+		unsigned char *yinput = &input[(myy * width) * depth];
+		unsigned char *youtput = &data[(myy * width) * depth];
 		int ydistcenter = abs(halfheight - myy);
 		float ydistsq = (float)(ydistcenter * ydistcenter);
 		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
@@ -299,8 +348,8 @@ void postprocesscolor(ppargs_t *args){
 			if(distb < 0.0) distb = 0.0;
 
 
-			unsigned char * xinput = &yinput[myx * depth];
-			unsigned char * xoutput = &youtput[myx * depth];
+			unsigned char *xinput = &yinput[myx * depth];
+			unsigned char *xoutput = &youtput[myx * depth];
 			unsigned int readin = *((unsigned int *)xinput);
 			float b = (readin & 0xFF);
 			float g = ((readin >> 8) & 0xFF);
@@ -332,7 +381,7 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue,
 
 	if(lastr == red && lastg == green && lastb == blue && lasts == start) return 2;
 
-	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
+	ppargs_t *mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
 	for(i = 0; i < opts.threads; i++){
 		mythreads[i].d1 = (unsigned char *)lock->screenshot->data;
@@ -347,7 +396,7 @@ int updateColor(Display *disp, lock_t *lock, float red, float green, float blue,
 		mythreads[i].g = green;
 		mythreads[i].b = blue;
 		mythreads[i].s = start;
-		pthread_create(&mythreads[i].t, NULL, (void * )postprocesscolor, (void *)&mythreads[i]);
+		pthread_create(&mythreads[i].t, NULL, (void *)postprocesscolor, (void *)&mythreads[i]);
 	}
 	for(i = 0; i < opts.threads; i++){
 		pthread_join(mythreads[i].t, NULL);
@@ -381,7 +430,7 @@ int getstealth(Display *disp, lock_t *lock){
 	return TRUE;
 }
 
-int getscreenshot(Display * disp, lock_t *lock){
+int getscreenshot(Display *disp, lock_t *lock){
 
 	if(opts.threads < 1) return FALSE;
 
@@ -390,13 +439,13 @@ int getscreenshot(Display * disp, lock_t *lock){
 	lock->screenshot = XGetImage(disp, lock->root, 0,0, width, height, AllPlanes, ZPixmap);
 	lock->depth = lock->screenshot->depth / 8;
 	if(lock->depth == 3) lock->depth =4;
-	unsigned char * data = malloc (width * height * lock->depth);
+	unsigned char *data = malloc (width * height * lock->depth);
 	lock->scrdata = malloc (width * height * lock->depth);
-	unsigned char * input = (unsigned char *) lock->screenshot->data;
+	unsigned char *input = (unsigned char *) lock->screenshot->data;
 
 	memcpy(data, input, width * height * lock->depth);
 
-	ppargs_t * mythreads = malloc(opts.threads * sizeof(ppargs_t));
+	ppargs_t *mythreads = malloc(opts.threads * sizeof(ppargs_t));
 	int i;
 	for(i = 0; i < opts.threads; i++){
 		mythreads[i].d1 = data;
@@ -407,7 +456,7 @@ int getscreenshot(Display * disp, lock_t *lock){
 		mythreads[i].width = width;
 		mythreads[i].height = height;
 		mythreads[i].depth = lock->depth;
-		pthread_create(&mythreads[i].t, NULL, (void * )postprocessx, (void *)&mythreads[i]);
+		pthread_create(&mythreads[i].t, NULL, (void *)postprocessx, (void *)&mythreads[i]);
 	}
 	for(i = 0; i < opts.threads; i++){
 		pthread_join(mythreads[i].t, NULL);
@@ -531,10 +580,10 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 #include "stb_image.h"
 
 int getimage(Display *disp, lock_t *lock){
-	char * filename = opts.imagename;
+	char *filename = opts.imagename;
 	if(!disp || !lock) return FALSE;
 	int x, y, n;
-	unsigned char * imagedata = 0;
+	unsigned char *imagedata = 0;
 	if(filename)imagedata = stbi_load(filename, &x, &y, &n, 0);
 
 	int width = lock->width;
@@ -720,9 +769,29 @@ fillargs:
 }
 
 
+void usage() { //print HELP
+	puts("robolock help documentation");
+	puts("   -h :: show this help documentation");
+	puts("   -i IMAGE :: use IMAGE instead of screenshot. no Blurring.");
+	puts("   -b INT :: blursize in pixels. Defaults to 25");
+	puts("   -t THREADS :: thread count for image manipulatoin. Default 8");
+	puts("   -c \"COLORS\" :: a space delimited list of colors that can be");
+	puts("                    used for keystroke highlighting. Colors are");
+	puts("                    specified in the form #RRGGBB");
+	puts("   -s :: Stealth-mode: no blurring, no colors, mouse pointer");
+	puts("         still active");
+	puts("   -a ALERT :: run $ALERT if an invalid password is entered");
+	puts("   -p :: if present, pressing a mouse button will trigger an alert");
+	puts("   -P :: if present, pressing a mouse button acts as [enter]");
+	puts("         this overrides the -p option, if applicable");
+	puts("   -l LOGSIZE :: log the output of ALERT, if present, and print");
+	puts("                 the log to standard out once a correct password");
+	puts("                 has been entered");
+}
+
 int main(const int argc, char ** argv){
 	const char *pws = 0;
-	Display * disp;
+	Display *disp;
 	disp = XOpenDisplay(0);
 	{
 		/* default blur size */
@@ -737,10 +806,14 @@ int main(const int argc, char ** argv){
 		/* default color set */
 		opts.color_count = 0;
 		opts.colors = 0;
+
+		/* default logging information */
+		opts.print_logs_on_pwcorrect = 0;
+		opts.total_logs = 0;
 	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:t:i:c:a:spP")) != -1) {
+	while((c = getopt(argc, argv, "b:t:l:i:c:a:spPh")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
@@ -765,6 +838,13 @@ int main(const int argc, char ** argv){
 				break;
 			case 'P':
 				opts.alertpress = 2;
+				break;
+			case 'h':
+				usage();
+				exit(1);
+			case 'l':
+				opts.print_logs_on_pwcorrect = 1;
+				opts.total_logs = atoi(optarg);
 				break;
 			case '?':
 				switch(optopt) {
@@ -820,12 +900,15 @@ int main(const int argc, char ** argv){
 		XCloseDisplay(disp);
 		return 1;
 	}
-	printf("locked!\n");
 	readpw(disp, pws, locks, nscreens);
 	for(i = 0; i <nscreens; i++){
 		unlockscreen(disp, &locks[i]);
 	}
 	free(locks);
 	XCloseDisplay(disp);
+	if (opts.print_logs_on_pwcorrect) {
+		print_logs();
+		free_logs();
+	}
 	return 0;
 }
