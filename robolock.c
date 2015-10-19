@@ -45,6 +45,7 @@ typedef struct options_s {
 	XColor *colors;
 	unsigned int color_count;
 	char stealth;
+	char * command;
 } options_t;
 
 int running = TRUE;
@@ -71,6 +72,15 @@ int outofmemnokill(void){
 	if(len >= OOMVALLEN) return FALSE; //todo
 	if(file < 0 || write(file, value, len) != len || close(file) != 0) return FALSE; // todo
 	return TRUE;
+}
+
+
+
+
+void runcmd(char * command){
+	if(fork()){
+		exit(system(command));
+	}
 }
 
 char * getpw(void){
@@ -447,6 +457,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 						}
 						XBell(disp, 100);
 						failure = TRUE;
+						if(opts.command)runcmd(opts.command);
 					}
 					len = 0;
 					break;
@@ -709,7 +720,7 @@ int main(const int argc, char ** argv){
 	}
 
 	int c;
-	while((c = getopt(argc, argv, "b:t:i:c:s")) != -1) {
+	while((c = getopt(argc, argv, "b:t:i:c:a:s")) != -1) {
 		switch(c) {
 			case 't':
 				opts.threads = atoi(optarg);
@@ -725,6 +736,9 @@ int main(const int argc, char ** argv){
 				break;
 			case 's':
 				opts.stealth = TRUE;
+				break;
+			case 'a':
+				opts.command = optarg;
 				break;
 			case '?':
 				switch(optopt) {
@@ -742,6 +756,10 @@ int main(const int argc, char ** argv){
 						break;
 					case 't':
 						fprintf(stderr, "-t --threads [int]: missing [int]\n");
+						exit(1);
+						break;
+					case 'a':
+						fprintf(stderr, "-a --alert [command]: missing [command]\n");
 						exit(1);
 						break;
 				}
