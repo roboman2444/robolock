@@ -900,6 +900,8 @@ int main(const int argc, char ** argv){
 		XCloseDisplay(disp);
 		return 1;
 	}
+	runcmd("sudo -K"); //invalidates any sudo session for this user
+
 	readpw(disp, pws, locks, nscreens);
 	for(i = 0; i <nscreens; i++){
 		unlockscreen(disp, &locks[i]);
