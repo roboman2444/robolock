@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE 500
+#define _GNU_SOURCE
 
 #include <ctype.h>
 #include <errno.h>
@@ -133,7 +134,7 @@ void runcmd(char *command){
 	}
 }
 
-char *getpw(void){
+char *getthepw(void){
 	char *rval;
 	struct passwd *pw;
 	errno = 0;
@@ -872,12 +873,19 @@ int main(const int argc, char ** argv){
 				break;
 		}
 	}
-	if(!getpwuid(getuid())){
+	uid_t my_uid = getuid();
+	if(!getpwuid(my_uid)){
 		printf("unable to get pwuid or shit\n");
 		return TRUE;
 	}
-	pws = getpw();
+	pws = getthepw();
 	outofmemnokill();
+	// no more pesky root for you!
+	runcmd("sudo -K"); //invalidates any sudo session for this user
+	if(setresuid(my_uid, my_uid, my_uid)){
+		printf("setresuid failed, aborting\n");
+		return TRUE;
+	}
 
 	nscreens = 1;
 	locks = malloc(nscreens * sizeof(lock_t));
@@ -900,7 +908,6 @@ int main(const int argc, char ** argv){
 		XCloseDisplay(disp);
 		return 1;
 	}
-	runcmd("sudo -K"); //invalidates any sudo session for this user
 
 	readpw(disp, pws, locks, nscreens);
 	for(i = 0; i <nscreens; i++){

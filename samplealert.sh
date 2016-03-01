@@ -8,5 +8,7 @@ IMAGEFILE="$LOGDIR/alert-$LOGDATE.jpeg"
 echo printing to log $LOGFILE
 date > $LOGFILE
 streamer -o $IMAGEFILE
+xmessage "ROBOLOCK: wrong password! last attempt: $LOGDATE" &
+#xmessage `whoami` &
 echo
 echo done
