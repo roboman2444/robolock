@@ -24,7 +24,15 @@
 
 #define TRUE 1
 #define FALSE 0
-
+//gamma and degamma taken from
+//http://www.iquilezles.org/www/articles/gamma/gamma.htm
+#include <math.h>
+//#define GAMMA(a) pow((float)(a), 1.0/2.2)
+//#define DEGAMMA(a) pow((float)(a), 2.2)
+#define GAMMA(a) ((a))
+#define DEGAMMA(a) ((a))
+//#define DEGAMMA(x) ((x)*(x))
+//#define GAMMA(X) sqrt((x))
 typedef struct loglist {
 	struct loglist *next;
 	char *loginfo;
@@ -234,14 +242,14 @@ void postprocessx(ppargs_t *args){
 				unsigned int readin = ((unsigned int *)yoffinput)[(myx + xoff) % width];
 				int abszoff = abs(xoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
-				r += (readin & 0xFF) * weight;
-				g += ((readin >> 8) & 0xFF) * weight;
-				b += ((readin >> 16) & 0xFF) * weight;
+				r += DEGAMMA((readin & 0xFF)) * weight;
+				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
+				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
 				tweight += weight;
 			}
-			float fr = (float)r/tweight;
-			float fg = (float)g/tweight;
-			float fb = (float)b/tweight;
+			float fr = GAMMA((float)r/tweight);
+			float fg = GAMMA((float)g/tweight);
+			float fb = GAMMA((float)b/tweight);
 
 			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
 			*((unsigned int *)xdata) = result;
@@ -287,14 +295,14 @@ void postprocessy(ppargs_t *args){
 				unsigned int readin = ((unsigned int *)yoffinput)[myx];
 				int abszoff = abs(yoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
-				r += (readin & 0xFF) * weight;
-				g += ((readin >> 8) & 0xFF) * weight;
-				b += ((readin >> 16) & 0xFF) * weight;
+				r += DEGAMMA((readin & 0xFF)) * weight;
+				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
+				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
 				tweight += weight;
 			}
-			float fr = (float)r/tweight;
-			float fg = (float)g/tweight;
-			float fb = (float)b/tweight;
+			float fr = GAMMA((float)r/tweight);
+			float fg = GAMMA((float)g/tweight);
+			float fb = GAMMA((float)b/tweight);
 
 			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
 			*((unsigned int *)xdata) = result;
