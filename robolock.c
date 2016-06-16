@@ -130,7 +130,7 @@ void free_logs() {
 }
 
 void runcmd(char *command){
-	if (command) {
+	if (command /*&& !fork()*/) {
 		FILE *forkd = popen(command, "r");
 		if (forkd) {
 			char line[128] = {0}; // fuck you and your long lines
@@ -139,6 +139,7 @@ void runcmd(char *command){
 			}
 			fclose(forkd);
 		}
+//		exit(0);
 	}
 }
 
@@ -516,7 +517,11 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 						}
 						XBell(disp, 100);
 						failure = TRUE;
-						if(opts.command)runcmd(opts.command);
+						if(opts.command){
+							XSync(disp, True);
+							runcmd(opts.command);
+							XSync(disp, True);
+						}
 					}
 					len = 0;
 					break;
@@ -563,7 +568,11 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 			}
 		} else if(ev.type == ButtonPress){
 			if(opts.alertpress == 1){
-				if(opts.command)runcmd(opts.command);
+				if(opts.command){
+					XSync(disp, True);
+					runcmd(opts.command);
+					XSync(disp, True);
+				}
 			} else if(opts.alertpress == 2){
 				passwd[len] = 0;
 				if(len){
@@ -575,7 +584,11 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 						}
 						XBell(disp, 100);
 						failure = TRUE;
-						if(opts.command)runcmd(opts.command);
+						if(opts.command){
+							XSync(disp, True);
+							runcmd(opts.command);
+							XSync(disp, True);
+						}
 					}
 					len = 0;
 				}
