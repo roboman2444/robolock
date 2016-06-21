@@ -1,6 +1,8 @@
 #define _XOPEN_SOURCE 500
 #define _GNU_SOURCE
 
+#include <security/pam_appl.h>
+#include <security/pam_misc.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -72,6 +74,7 @@ int nscreens = 0;
 loglist *logs = NULL;
 unsigned int log_count = 0;
 
+unsigned int login(const char *password);
 options_t opts = {0};
 
 
@@ -486,7 +489,7 @@ int getscreenshot(Display *disp, lock_t *lock){
 	return TRUE;
 }
 
-void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks){
+void readpw(Display *disp, lock_t *locks, unsigned int numlocks){
 	char buf[32], passwd[256];
 	int num, screen;
 	unsigned int len;
@@ -509,7 +512,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 			case XK_Return:
 				passwd[len] = 0;
 				if(len){
-					running = !!strcmp(crypt(passwd, pws), pws);
+                    running = !login(passwd);
 					if(running){
 						unsigned int i;
 						for(i= 0; i <numlocks && !opts.stealth; i++){
@@ -576,7 +579,7 @@ void readpw(Display *disp, const char *pws, lock_t *locks, unsigned int numlocks
 			} else if(opts.alertpress == 2){
 				passwd[len] = 0;
 				if(len){
-					running = !!strcmp(crypt(passwd, pws), pws);
+                    running = !login(passwd);
 					if(running){
 						unsigned int i;
 						for(i= 0; i <numlocks && !opts.stealth; i++){
@@ -811,8 +814,12 @@ void usage() { //print HELP
 	puts("                 has been entered");
 }
 
+static char *_username = 0;
+char *username(void) {
+    return _username;
+}
+
 int main(const int argc, char ** argv){
-	const char *pws = 0;
 	Display *disp;
 	disp = XOpenDisplay(0);
 	{
@@ -898,8 +905,8 @@ int main(const int argc, char ** argv){
 	if(!getpwuid(my_uid)){
 		printf("unable to get pwuid or shit\n");
 		return TRUE;
-	}
-	pws = getthepw();
+    }
+    _username = getpwuid(my_uid)->pw_name;
 	outofmemnokill();
 	// no more pesky root for you!
 	runcmd("sudo -K"); //invalidates any sudo session for this user
@@ -930,7 +937,7 @@ int main(const int argc, char ** argv){
 		return 1;
 	}
 
-	readpw(disp, pws, locks, nscreens);
+	readpw(disp, locks, nscreens);
 	for(i = 0; i <nscreens; i++){
 		unlockscreen(disp, &locks[i]);
 	}
@@ -941,4 +948,94 @@ int main(const int argc, char ** argv){
 		free_logs();
 	}
 	return 0;
+}
+
+#define err(name)                                   \
+    do {                                            \
+        fprintf(stderr, "%s: %s\n", name,           \
+                pam_strerror(pam_handle, result));  \
+        end(result);                                \
+        return 0;                               \
+    } while (1);   
+
+pam_handle_t *pam_handle;
+static inline int end(int last_result) {
+    int result = pam_end(pam_handle, last_result);
+    pam_handle = 0;
+    return result;
+}
+
+static int conv(int num_msg, const struct pam_message **msg,
+        struct pam_response **resp, void *appdata_ptr) {
+    int i;
+    *resp = calloc(num_msg, sizeof(struct pam_response));
+    if (*resp == NULL) {
+        return PAM_BUF_ERR;
+    }
+    int result = PAM_SUCCESS;
+    for (i = 0; i < num_msg; i++) {
+        char *username, *password;
+        switch (msg[i]->msg_style) {
+            case PAM_PROMPT_ECHO_ON:
+                username = ((char **) appdata_ptr)[0];
+                (*resp)[i].resp = strdup(username);
+                break;
+            case PAM_PROMPT_ECHO_OFF:
+                password = ((char **) appdata_ptr)[1];
+                (*resp)[i].resp = strdup(password);
+                break;
+            case PAM_ERROR_MSG:
+                fprintf(stderr, "%s\n", msg[i]->msg);
+                result = PAM_CONV_ERR;
+                break;
+            case PAM_TEXT_INFO:
+                printf("%s\n", msg[i]->msg);
+                break;
+        }
+        if (result != PAM_SUCCESS) {
+            break;
+        }
+    }
+
+    if (result != PAM_SUCCESS) {
+        free(*resp);
+        *resp = 0;
+    }
+
+    return result;
+}
+
+unsigned int login(const char *password) {
+    const char *data[2] = {username(), password};
+    struct pam_conv pam_conv = {
+        conv, data
+    };
+
+    int result = pam_start("ttydm", username(), &pam_conv, &pam_handle);
+    if (result != PAM_SUCCESS) {
+        err("pam_start");
+    }
+
+    result = pam_authenticate(pam_handle, 0);
+    if (result != PAM_SUCCESS) {
+        err("pam_authenticate");
+    }
+
+    result = pam_acct_mgmt(pam_handle, 0);
+    if (result != PAM_SUCCESS) {
+        err("pam_acct_mgmt");
+    }
+
+    result = pam_setcred(pam_handle, PAM_ESTABLISH_CRED);
+    if (result != PAM_SUCCESS) {
+        err("pam_setcred");
+    }
+
+    result = pam_open_session(pam_handle, 0);
+    if (result != PAM_SUCCESS) {
+        pam_setcred(pam_handle, PAM_DELETE_CRED);
+        err("pam_open_session");
+    }
+
+    return 1;
 }
