@@ -1,6 +1,6 @@
 
 CC = gcc
-LDFLAGS = -lX11 -lpthread -lcrypt -lXext -lXrandr -lc -lm
+LDFLAGS = -lX11 -lpthread -lXext -lXrandr -lc -lm -lpam
 CFLAGS = -Wall -Ofast -fstrict-aliasing -march=native
 OBJECTS = robolock.o stb_image_precompile.o
 
