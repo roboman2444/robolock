@@ -24,6 +24,16 @@
 #include <fcntl.h>
 #include <linux/oom.h>
 
+#define SIMD
+#ifdef SIMD
+#include <xmmintrin.h>
+#endif
+
+#define BENCHMARK
+#ifdef BENCHMARK
+#include <time.h>
+#endif
+
 #define TRUE 1
 #define FALSE 0
 //gamma and degamma taken from
@@ -226,6 +236,95 @@ void postprocessx(ppargs_t *args){
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
+#ifdef SIMD
+	for(yint = 0; yint < TILEY && y + yint < height; yint+=4){
+		int myy = y+yint;
+		int ki;
+		unsigned char *ydata0, *ydata1, *ydata2, *ydata3, *yoffinput0, *yoffinput1, *yoffinput2, *yoffinput3;
+		ydata0 =ydata1 = ydata2 = ydata3 = &data[(myy * width) * depth];
+		yoffinput0 = yoffinput1 = yoffinput2 =yoffinput3  = &input[myy  * width * depth];
+		if((ki = myy+1) < height){
+			ydata1 = &data[ki * width * depth];
+			yoffinput1 = &input[ki * width * depth];
+		}
+		if((ki = myy+2) < height){
+			ydata2 = &data[ki * width * depth];
+			yoffinput2 = &input[ki * width * depth];
+		}
+		if((ki = myy+3) < height){
+			ydata3 = &data[ki * width * depth];
+			yoffinput3 = &input[ki * width * depth];
+		}
+		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
+
+			int myx = x+xint;
+			unsigned int offs = myx * depth;
+
+			unsigned char *xdata0 = &ydata0[offs];
+			unsigned char *xdata1 = &ydata1[offs];
+			unsigned char *xdata2 = &ydata2[offs];
+			unsigned char *xdata3 = &ydata3[offs];
+
+			__m128 r = _mm_setzero_ps();
+			__m128 g = _mm_setzero_ps();
+			__m128 b = _mm_setzero_ps();
+			int xoff;
+			float tweight = 0;
+
+			for(xoff = -blursize; xoff < blursize; xoff++){
+				unsigned int readin0 = ((unsigned int *)yoffinput0)[(myx + xoff) % width];
+				unsigned int readin1 = ((unsigned int *)yoffinput1)[(myx + xoff) % width];
+				unsigned int readin2 = ((unsigned int *)yoffinput2)[(myx + xoff) % width];
+				unsigned int readin3 = ((unsigned int *)yoffinput3)[(myx + xoff) % width];
+				int abszoff = abs(xoff);
+				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				//will do the conversion using simd later
+				float in[4];
+				in[0] = DEGAMMA((readin0 & 0xFF));
+				in[1] = DEGAMMA((readin1 & 0xFF));
+				in[2] = DEGAMMA((readin2 & 0xFF));
+				in[3] = DEGAMMA((readin3 & 0xFF));
+				__m128 nr = _mm_load_ps(in);
+				in[0] = DEGAMMA(((readin0>>8) & 0xFF));
+				in[1] = DEGAMMA(((readin1>>8) & 0xFF));
+				in[2] = DEGAMMA(((readin2>>8) & 0xFF));
+				in[3] = DEGAMMA(((readin3>>8) & 0xFF));
+				__m128 ng = _mm_load_ps(in);
+				in[0] = DEGAMMA(((readin0>>16) & 0xFF));
+				in[1] = DEGAMMA(((readin1>>16) & 0xFF));
+				in[2] = DEGAMMA(((readin2>>16) & 0xFF));
+				in[3] = DEGAMMA(((readin3>>16) & 0xFF));
+				__m128 nb = _mm_load_ps(in);
+
+				__m128 nw = _mm_set1_ps(weight);
+				r = _mm_add_ps(r, _mm_mul_ps(nr,nw));
+				g = _mm_add_ps(g, _mm_mul_ps(ng,nw));
+				b = _mm_add_ps(b, _mm_mul_ps(nb,nw));
+				tweight += weight;
+			}
+			__m128 ntw = _mm_set1_ps(tweight);
+			r = _mm_div_ps(r, ntw);
+			g = _mm_div_ps(g, ntw);
+			b = _mm_div_ps(b, ntw);
+			float outr[4];
+			float outg[4];
+			float outb[4];
+			_mm_store_ps(outr, r);
+			_mm_store_ps(outg, g);
+			_mm_store_ps(outb, b);
+
+	//todo put gamma
+			int result0 = (int)(outr[0]) | (int)(outg[0]) << 8 | (int)(outb[0])<<16;
+			int result1 = (int)(outr[1]) | (int)(outg[1]) << 8 | (int)(outb[1])<<16;
+			int result2 = (int)(outr[2]) | (int)(outg[2]) << 8 | (int)(outb[2])<<16;
+			int result3 = (int)(outr[3]) | (int)(outg[3]) << 8 | (int)(outb[3])<<16;
+			*((unsigned int *)xdata0) = result0;
+			*((unsigned int *)xdata1) = result1;
+			*((unsigned int *)xdata2) = result2;
+			*((unsigned int *)xdata3) = result3;
+		}
+	}
+#else
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
 		unsigned char *ydata = &data[(myy * width) * depth];
@@ -259,6 +358,7 @@ void postprocessx(ppargs_t *args){
 			*((unsigned int *)xdata) = result;
 		}
 	}
+	#endif
 	}
 	}
 }
@@ -459,6 +559,10 @@ int getscreenshot(Display *disp, lock_t *lock){
 	memcpy(data, input, width * height * lock->depth);
 
 	ppargs_t *mythreads = malloc(opts.threads * sizeof(ppargs_t));
+#ifdef BENCHMARK
+	struct timespec tstart = {0}, tend = {0};
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
+#endif
 	int i;
 	for(i = 0; i < opts.threads; i++){
 		mythreads[i].d1 = data;
@@ -483,6 +587,11 @@ int getscreenshot(Display *disp, lock_t *lock){
 		pthread_join(mythreads[i].t, NULL);
 	}
 
+#ifdef BENCHMARK
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	double time = ((double)tend.tv_sec + 1.0e-9 * tend.tv_nsec) - ((double)tstart.tv_sec + 1.0e-9 * tstart.tv_nsec);
+	printf("time to do blur %.5f\n", time);
+#endif
 	free(mythreads);
 
 	free(data);
