@@ -31,6 +31,9 @@
 
 /*notes for further blur opti (rewrite of blur funcs and etc)
 //pre-pass to convert to (degamma) float in a simd friendly format for the first pass (might be simd-optimized? idk, all it is is a shift, a mask, convert to float, degamma and then put in memory in a differnt place for each channel)
+
+//no need to worry about simd running off the edge (ki int) because the simd friendly format will take care of it
+
 //first pass outputs a rotated 90* simd-friendly version
 //second blur pass converts back to int in the right direction(rotated back 90*) and does the gamma
 //weighting is precomputed into a (small) table.
