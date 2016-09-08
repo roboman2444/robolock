@@ -29,6 +29,16 @@
 #include <xmmintrin.h>
 #endif
 
+/*notes for further blur opti (rewrite of blur funcs and etc)
+//pre-pass to convert to (degamma) float in a simd friendly format for the first pass (might be simd-optimized? idk, all it is is a shift, a mask, convert to float, degamma and then put in memory in a differnt place for each channel)
+//first pass outputs a rotated 90* simd-friendly version
+//second blur pass converts back to int in the right direction(rotated back 90*) and does the gamma
+//weighting is precomputed into a (small) table.
+//tiled eventually
+
+*/
+
+
 #define BENCHMARK
 #ifdef BENCHMARK
 #include <time.h>
@@ -380,6 +390,46 @@ void postprocessy(ppargs_t *args){
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
+
+#ifdef SIMDTODODOODODDODODODDODODODDOO JUST REWRITE IT ALL
+	for(yint = 0; yint < TILEY && y + yint < height; yint++){
+		int myy = y+yint;
+		unsigned char *ydata = &data[(myy * width) * depth];
+		for(xint = 0 ;xint < TILEX && x+xint < width; xint++){
+
+			int myx = x+xint;
+			int ki;
+			unsigned char *xdata0, *xdata1, *xdata2, *xdata3, *yoffinput0, ,*yoffinput1, *yoffinput2, *yoffinput3;
+			xdata0= xdata1 = xdata2 = xdata3 = &ydata[myx * depth];
+			if((ki = myx+1) < width){
+				
+			}
+
+			int result = 0;
+			float r = 0;
+			float g = 0;
+			float b = 0;
+			int yoff;
+			float tweight = 0;
+			for(yoff = -blursize; yoff < blursize; yoff++){
+				unsigned char *yoffinput = &input[((yoff + myy) % height) * width * depth];
+				unsigned int readin = ((unsigned int *)yoffinput)[myx];
+				int abszoff = abs(yoff);
+				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				r += DEGAMMA((readin & 0xFF)) * weight;
+				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
+				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
+				tweight += weight;
+			}
+			float fr = GAMMA((float)r/tweight);
+			float fg = GAMMA((float)g/tweight);
+			float fb = GAMMA((float)b/tweight);
+
+			result = (int)(fr) | (int)(fg) << 8 | (int)(fb)<<16;
+			*((unsigned int *)xdata) = result;
+		}
+	}
+#else
 	for(yint = 0; yint < TILEY && y + yint < height; yint++){
 		int myy = y+yint;
 		unsigned char *ydata = &data[(myy * width) * depth];
@@ -412,6 +462,7 @@ void postprocessy(ppargs_t *args){
 			*((unsigned int *)xdata) = result;
 		}
 	}
+#endif
 	}
 	}
 }
