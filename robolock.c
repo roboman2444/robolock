@@ -41,7 +41,7 @@
 
 */
 
-
+//#define WEIGHTSTABLE
 #define BENCHMARK
 #ifdef BENCHMARK
 #include <time.h>
@@ -100,6 +100,28 @@ unsigned int log_count = 0;
 unsigned int login(const char *password);
 options_t opts = {0};
 
+
+
+
+#ifdef WEIGHTSTABLE
+float *weightsmiddle = 0;
+float *weightstable = 0;
+float weightstablesize = 0;
+
+void genweightstable(int size){
+	if(weightstable) free(weightstable);
+	weightstablesize = size;
+	weightstable = malloc(size * 2 * sizeof(float));
+	weightsmiddle = weightstable + size;
+	float blursquare = (float) (size * size);
+	int kek;
+	for(kek = - size; kek < size; kek++){
+		int abszoff = abs(kek);
+		float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+		weightsmiddle[kek] = weight;
+	}
+}
+#endif
 
 #include <linux/oom.h>
 #include <fcntl.h>
@@ -243,9 +265,9 @@ void postprocessx(ppargs_t *args){
 	unsigned char *data = args->d1;
 	unsigned char *input = args->d2;
 	int blursize = args->blursize;
-
+#ifndef WEIGHTSTABLE
 	float blursquare = (float)(blursize * blursize);
-
+#endif
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -289,8 +311,12 @@ void postprocessx(ppargs_t *args){
 				unsigned int readin1 = ((unsigned int *)yoffinput1)[(myx + xoff) % width];
 				unsigned int readin2 = ((unsigned int *)yoffinput2)[(myx + xoff) % width];
 				unsigned int readin3 = ((unsigned int *)yoffinput3)[(myx + xoff) % width];
+				#ifdef WEIGHTSTABLE
+					float weight = weightsmiddle[xoff];
+				#else
 				int abszoff = abs(xoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				#endif
 				//will do the conversion using simd later
 				float in[4];
 				in[0] = DEGAMMA((readin0 & 0xFF));
@@ -356,8 +382,12 @@ void postprocessx(ppargs_t *args){
 
 			for(xoff = -blursize; xoff < blursize; xoff++){
 				unsigned int readin = ((unsigned int *)yoffinput)[(myx + xoff) % width];
+				#ifdef WEIGHTSTABLE
+					float weight = weightsmiddle[xoff];
+				#else
 				int abszoff = abs(xoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				#endif
 				r += DEGAMMA((readin & 0xFF)) * weight;
 				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
 				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
@@ -387,9 +417,9 @@ void postprocessy(ppargs_t *args){
 	unsigned char *data = args->d1;
 	unsigned char *input = args->d2;
 	int blursize = args->blursize;
-
+#ifndef WEIGHTSTABLE
 	float blursquare = (float)(blursize *blursize);
-
+#endif
 	unsigned int x, y, yint, xint;
 	for(y = mythread * TILEY; y < height; y+=numthreads * TILEY){
 	for(x = 0; x < width; x += TILEX){
@@ -417,8 +447,12 @@ void postprocessy(ppargs_t *args){
 			for(yoff = -blursize; yoff < blursize; yoff++){
 				unsigned char *yoffinput = &input[((yoff + myy) % height) * width * depth];
 				unsigned int readin = ((unsigned int *)yoffinput)[myx];
+				#ifdef WEIGHTSTABLE
+					float weight = weightsmiddle[yoff];
+				#else
 				int abszoff = abs(yoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				#endif
 				r += DEGAMMA((readin & 0xFF)) * weight;
 				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
 				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
@@ -450,8 +484,12 @@ void postprocessy(ppargs_t *args){
 			for(yoff = -blursize; yoff < blursize; yoff++){
 				unsigned char *yoffinput = &input[((yoff + myy) % height) * width * depth];
 				unsigned int readin = ((unsigned int *)yoffinput)[myx];
+				#ifdef WEIGHTSTABLE
+					float weight = weightsmiddle[yoff];
+				#else
 				int abszoff = abs(yoff);
 				float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
+				#endif
 				r += DEGAMMA((readin & 0xFF)) * weight;
 				g += DEGAMMA(((readin >> 8) & 0xFF)) * weight;
 				b += DEGAMMA(((readin >> 16) & 0xFF)) * weight;
@@ -613,6 +651,9 @@ int getscreenshot(Display *disp, lock_t *lock){
 	memcpy(data, input, width * height * lock->depth);
 
 	ppargs_t *mythreads = malloc(opts.threads * sizeof(ppargs_t));
+#ifdef WEIGHTSTABLE
+	genweightstable(opts.blur_size);
+#endif
 #ifdef BENCHMARK
 	struct timespec tstart = {0}, tend = {0};
 	clock_gettime(CLOCK_MONOTONIC, &tstart);
