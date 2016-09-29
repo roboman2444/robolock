@@ -31,15 +31,18 @@
 
 /*notes for further blur opti (rewrite of blur funcs and etc)
 //pre-pass to convert to (degamma) float in a simd friendly format for the first pass (might be simd-optimized? idk, all it is is a shift, a mask, convert to float, degamma and then put in memory in a differnt place for each channel)
+//	-done
 
 //no need to worry about simd running off the edge (ki int) because the simd friendly format will take care of it
 
 //first pass outputs a rotated 90* simd-friendly version
 //second blur pass converts back to int in the right direction(rotated back 90*) and does the gamma
 //weighting is precomputed into a (small) table.
+//	-done
 //tiled eventually
 
 */
+
 
 //#define WEIGHTSTABLE
 #define BENCHMARK
@@ -122,6 +125,44 @@ void genweightstable(int size){
 	}
 }
 #endif
+
+
+
+//proto for convert to simd-friendly
+int conv_simdfriendly(char * in, float ** out, unsigned int x, unsigned int y){
+	unsigned int myy = (y + 3) & ~3; // 4 on da floor
+	*out = malloc(myy * x * sizeof(float));
+	unsigned int i, j;
+	unsigned int keky = y /4;
+	unsigned int fourwidth = x*4;
+	for(i = 0; i < keky; i++){
+		unsigned int widtheyes = i*x;
+		for(j = 0; j < x; j++){
+			//todo degamma
+			float * outpos = (*out)+(j*4+widtheyes);
+			outpos[0] = (float)in[(i+0) * fourwidth + j];
+			outpos[1] = (float)in[(i+1) * fourwidth + j];
+			outpos[2] = (float)in[(i+2) * fourwidth + j];
+			outpos[3] = (float)in[(i+3) * fourwidth + j];
+		}
+	}
+	//finish up last 4
+	unsigned int widtheyes = i*x;
+	unsigned int foureyes = i*4;
+	for(j = 0; j < x; j++){
+		//todo degamma
+		float * outpos = (*out)+(j*4+widtheyes);
+		unsigned int po;
+		if((po = foureyes+0) < y)outpos[0] = (float)in[po*x + j];
+		if((po = foureyes+1) < y)outpos[1] = (float)in[po*x + j];
+		if((po = foureyes+2) < y)outpos[2] = (float)in[po*x + j];
+		if((po = foureyes+3) < y)outpos[3] = (float)in[po*x + j];
+	}
+	//todo figure out how to make sure the black added to 4 it doesnt "bleed"
+	//may not really be an issue
+	return TRUE;
+}
+
 
 #include <linux/oom.h>
 #include <fcntl.h>
