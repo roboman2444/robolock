@@ -32,19 +32,27 @@
 /*notes for further blur opti (rewrite of blur funcs and etc)
 //pre-pass to convert to (degamma) float in a simd friendly format for the first pass (might be simd-optimized? idk, all it is is a shift, a mask, convert to float, degamma and then put in memory in a differnt place for each channel)
 //	-done
+//	still need degamma
 
 //no need to worry about simd running off the edge (ki int) because the simd friendly format will take care of it
 
 //first pass outputs a rotated 90* simd-friendly version
+//	done?
 //second blur pass converts back to int in the right direction(rotated back 90*) and does the gamma
+//	done?
 //weighting is precomputed into a (small) table.
 //	-done
+//	also adjust the weights to it accumulates to 1.0, skips a divide for every pixel (per blur pass), as well as tracking the accumulated weight for every pixel(per pass) (approx blurdist * 2 * pixelcount per pass of adds).
+//	can adjust the overall brightness of the image here as well!
+//		-done
 //tiled eventually
+//TODO test if interleaved RGB is faster than seperate RGB
+//todo try seeing if having weights be an array of __m128s instead of floats
 
 */
 
 
-//#define WEIGHTSTABLE
+#define WEIGHTSTABLE
 #define BENCHMARK
 #ifdef BENCHMARK
 #include <time.h>
@@ -118,17 +126,29 @@ void genweightstable(int size){
 	weightsmiddle = weightstable + size;
 	float blursquare = (float) (size * size);
 	int kek;
+	float weightaccum = 0.0;
 	for(kek = - size; kek < size; kek++){
 		int abszoff = abs(kek);
 		float weight = 1.0 - (float)(abszoff*abszoff) / blursquare;
 		weightsmiddle[kek] = weight;
+		weightaccum+=weight;
 	}
+	printf("total weight %f\n", weightaccum);
+	//adjust weights so its out of 1
+	for(kek = - size; kek < size; kek++){
+		weightsmiddle[kek] /= weightaccum;
+	}
+	weightaccum = 0.0;
+	for(kek = - size; kek < size; kek++){
+		weightaccum+=weightsmiddle[kek];
+	}
+	printf("total weight post adjust %f\n", weightaccum);
 }
 #endif
 
 
 
-//proto for convert to simd-friendly
+//proto for convert to simd-friendly, one channel only
 int conv_simdfriendly(char * in, float ** out, unsigned int x, unsigned int y){
 	unsigned int myy = (y + 3) & ~3; // 4 on da floor
 	*out = malloc(myy * x * sizeof(float));
@@ -161,6 +181,66 @@ int conv_simdfriendly(char * in, float ** out, unsigned int x, unsigned int y){
 	//todo figure out how to make sure the black added to 4 it doesnt "bleed"
 	//may not really be an issue
 	return TRUE;
+}
+//proto for first blur pass (input simd-friendly, output simd-friendly treansposed), one channel only
+int blur_firstpass(float * in, float ** out, int blursize, unsigned int x, unsigned int y){
+	unsigned int myx = (x + 3) & ~3; // 4 on da floor
+	*out = malloc(myx * y * sizeof(float));
+
+	int ix, iy, fourx = 4*x;
+	for(iy = 0; iy < y/4; y++){
+		float * inpos = in + (iy * fourx);
+		for(ix = 0; ix < x; ix++){
+			float * expos = inpos + ix *4;
+			__m128 a = _mm_load_ps(expos);
+			int xoff;
+			int mybs = ix + blursize > x ? x - ix : blursize;
+			int mybsm = ix - blursize < 0 ? -ix : -blursize;
+			for(xoff = mybsm; xoff < mybs; xoff++){
+				float weight = weightsmiddle[xoff];
+				__m128 n = _mm_load_ps(expos + xoff*4);
+				__m128 nw = _mm_set1_ps(weight);
+				a = _mm_add_ps(a, _mm_mul_ps(n,nw));
+			}
+			float outb[4];
+			_mm_store_ps(outb, a);
+			//this is some whack ass shit man
+			float *crazy = *out + (ix * y) + (iy *4) + (ix % 4);
+			crazy[0] = a[0];
+			crazy[4] = a[1];
+			crazy[8] = a[2];
+			crazy[12] = a[3];
+		}
+	}
+	return 0;
+}
+//proto for first blur pass (input simd-friendly, output normal transposed), one channel only
+int blur_secondpass(float * in, char * out, int blursize, unsigned int x, unsigned int y){
+
+	int ix, iy, fourx = 4*y;
+	for(iy = 0; iy < x/4; y++){
+		float * inpos = in + (iy * fourx);
+		for(ix = 0; ix < y; ix++){
+			float * expos = inpos + ix *4;
+			__m128 a = _mm_load_ps(expos);
+			int xoff;
+			int mybs = ix + blursize > y ? y - ix : blursize;
+			int mybsm = ix - blursize < 0 ? -ix : -blursize;
+			for(xoff = mybsm; xoff < mybs; xoff++){
+				float weight = weightsmiddle[xoff];
+				__m128 n = _mm_load_ps(expos + xoff*4);
+				__m128 nw = _mm_set1_ps(weight);
+				a = _mm_add_ps(a, _mm_mul_ps(n,nw));
+			}
+			float outb[4];
+			_mm_store_ps(outb, a);
+			out[ix * y + (iy * 4 +0)] = outb[0];
+			out[ix * y + (iy * 4 +1)] = outb[1];
+			out[ix * y + (iy * 4 +2)] = outb[2];
+			out[ix * y + (iy * 4 +3)] = outb[3];
+		}
+	}
+	return 0;
 }
 
 
