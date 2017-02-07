@@ -147,7 +147,7 @@ void genweightstable(int size){
 #endif
 
 
-
+#ifdef SIMD
 //proto for convert to simd-friendly, one channel only
 int conv_simdfriendly(char * in, float ** out, unsigned int x, unsigned int y){
 	unsigned int myy = (y + 3) & ~3; // 4 on da floor
@@ -243,7 +243,7 @@ int blur_secondpass(float * in, char * out, int blursize, unsigned int x, unsign
 	return 0;
 }
 
-
+#endif
 #include <linux/oom.h>
 #include <fcntl.h>
 int outofmemnokill(void){
