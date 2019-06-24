@@ -1281,7 +1281,7 @@ int main(const int argc, char ** argv){
                 pam_strerror(pam_handle, result));  \
         end(result);                                \
         return 0;                               \
-    } while (1);   
+    } while (1);
 
 pam_handle_t *pam_handle;
 static inline int end(int last_result) {
@@ -1345,7 +1345,7 @@ unsigned int login(const char *password) {
     if (result != PAM_SUCCESS) {
         err("pam_authenticate");
     }
-
+/*
     result = pam_acct_mgmt(pam_handle, 0);
     if (result != PAM_SUCCESS) {
         err("pam_acct_mgmt");
@@ -1361,6 +1361,10 @@ unsigned int login(const char *password) {
         pam_setcred(pam_handle, PAM_DELETE_CRED);
         err("pam_open_session");
     }
-
+*/
+    result = pam_end(pam_handle, 0);
+    if(result != PAM_SUCCESS){
+	err("pam_end");
+    }
     return 1;
 }
