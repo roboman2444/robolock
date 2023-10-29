@@ -97,6 +97,7 @@ typedef struct options_s {
 	char *command;
 	char print_logs_on_pwcorrect;
 	unsigned int total_logs;
+  char *servicename;
 } options_t;
 
 int running = TRUE;
@@ -1137,6 +1138,7 @@ void usage() { //print HELP
 	puts("   -l LOGSIZE :: log the output of ALERT, if present, and print");
 	puts("                 the log to standard out once a correct password");
 	puts("                 has been entered");
+  puts("   -n SERVICE NAME :: specifies the PAM service to use for login" );
 }
 
 static char *_username = 0;
@@ -1156,6 +1158,9 @@ int main(const int argc, char ** argv){
 
 		/* default image name */
 		opts.imagename = 0;
+
+    /* default service name */
+    opts.servicename = "login";
 
 		/* default color set */
 		opts.color_count = 0;
@@ -1200,6 +1205,8 @@ int main(const int argc, char ** argv){
 				opts.print_logs_on_pwcorrect = 1;
 				opts.total_logs = atoi(optarg);
 				break;
+      case 'n':
+        opts.servicename = optarg;
 			case '?':
 				switch(optopt) {
 					case 'b':
@@ -1336,7 +1343,7 @@ unsigned int login(const char *password) {
         conv, data
     };
 
-    int result = pam_start("ttydm", username(), &pam_conv, &pam_handle);
+    int result = pam_start(opts.servicename, username(), &pam_conv, &pam_handle);
     if (result != PAM_SUCCESS) {
         err("pam_start");
     }
